@@ -30,6 +30,7 @@ export interface InvoiceData {
   payments: Payment[];
   discountType: 'PERCENT' | 'FIXED';
   discountValue: number;
+  logo?: string; // Base64 string for the logo
 }
 
 export interface SavedInvoice {
@@ -46,5 +47,5 @@ export const COMPANY_DEFAULTS = {
   name: "TARGET Multi-brand Car Service",
   mobile: "84381 43591",
   address: "SRIRAM NAGAR, Veeranam Main Rd, Salem - 636003",
-  logoPlaceholder: "https://picsum.photos/100/100?grayscale" // Placeholder logo
+  logoPlaceholder: "https://picsum.photos/100/100?grayscale" // Fallback
 };

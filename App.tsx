@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, Save, Download, Search, RefreshCw, Printer } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Search, RefreshCw, Printer, Upload, Image as ImageIcon } from 'lucide-react';
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
 import { saveInvoice, searchInvoices } from './services/supabase';
 import html2canvas from 'html2canvas';
 
-// Helper to generate Invoice ID
-const generateInvoiceNo = () => `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+// Helper to generate Invoice ID (TCC + 4 digits)
+const generateInvoiceNo = () => `TCC${Math.floor(1000 + Math.random() * 9000)}`;
 
 // Initial State
 const INITIAL_INVOICE: InvoiceData = {
@@ -38,6 +38,15 @@ const App: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   
   const printRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load persistent logo on mount if available
+  useEffect(() => {
+    const savedLogo = localStorage.getItem('companyLogo');
+    if (savedLogo) {
+      setInvoice(prev => ({ ...prev, logo: savedLogo }));
+    }
+  }, []);
 
   // --- Calculations ---
   const subtotal = invoice.items.reduce((sum, item) => sum + item.total, 0);
@@ -120,6 +129,19 @@ const App: React.FC = () => {
     setInvoice(prev => ({ ...prev, payments: prev.payments.filter(p => p.id !== id) }));
   };
 
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setInvoice(prev => ({ ...prev, logo: base64String }));
+        localStorage.setItem('companyLogo', base64String); // Persist for future
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSaveToDB = async () => {
     setIsSaving(true);
     try {
@@ -140,14 +162,18 @@ const App: React.FC = () => {
   const handleDownloadJPEG = async () => {
     if (!printRef.current) return;
     try {
+      // Force a slight delay to ensure fonts render
+      await document.fonts.ready;
+      
       const canvas = await html2canvas(printRef.current, {
-        scale: 2, // Higher quality
+        scale: 2.5, // Higher quality
         useCORS: true,
-        logging: false
+        logging: false,
+        backgroundColor: '#ffffff'
       });
       const link = document.createElement('a');
       link.download = `${invoice.invoiceNo}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.9);
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
       link.click();
     } catch (err) {
       console.error("Export failed", err);
@@ -168,86 +194,97 @@ const App: React.FC = () => {
 
   const handleNewInvoice = () => {
     if (window.confirm("Start new invoice? Unsaved changes will be lost.")) {
-      setInvoice({ ...INITIAL_INVOICE, invoiceNo: generateInvoiceNo() });
+      const savedLogo = localStorage.getItem('companyLogo');
+      setInvoice({ 
+        ...INITIAL_INVOICE, 
+        invoiceNo: generateInvoiceNo(),
+        logo: savedLogo || undefined 
+      });
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans text-slate-800">
+    <div className="min-h-screen flex flex-col font-sans text-slate-800 bg-gray-50">
       {/* Navbar */}
       <nav className="bg-brand-dark text-white p-4 shadow-md sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-brand-red rounded flex items-center justify-center font-bold">T</div>
-            <span className="font-bold text-xl tracking-wide">TARGET <span className="text-gray-400 text-sm font-normal">Car Care ERP</span></span>
+        <div className="max-w-[1600px] mx-auto flex justify-between items-center px-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-brand-red rounded-lg flex items-center justify-center font-bold text-lg shadow-inner">T</div>
+            <div className="flex flex-col">
+              <span className="font-bold text-xl tracking-wide leading-tight">TARGET</span>
+              <span className="text-gray-400 text-xs font-medium tracking-wider">CAR CARE ERP</span>
+            </div>
           </div>
           <div className="flex gap-4">
             <button 
               onClick={() => setActiveTab('create')}
-              className={`px-4 py-2 rounded-md transition ${activeTab === 'create' ? 'bg-brand-blue text-white' : 'hover:bg-gray-700'}`}
+              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm ${activeTab === 'create' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
             >
               New Invoice
             </button>
             <button 
               onClick={() => setActiveTab('search')}
-              className={`px-4 py-2 rounded-md transition ${activeTab === 'search' ? 'bg-brand-blue text-white' : 'hover:bg-gray-700'}`}
+              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm ${activeTab === 'search' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
             >
-              History / Search
+              History
             </button>
           </div>
         </div>
       </nav>
 
       {/* Main Content */}
-      <main className="flex-grow p-4 md:p-8 max-w-7xl mx-auto w-full">
+      <main className="flex-grow p-6 md:p-10 max-w-[1600px] mx-auto w-full gap-10">
         
         {activeTab === 'search' ? (
-          <div className="bg-white p-6 rounded-lg shadow-lg">
-            <h2 className="text-2xl font-bold mb-6 text-brand-dark border-b pb-2">Invoice History</h2>
-            <div className="flex gap-4 mb-6">
-              <input 
-                type="text" 
-                placeholder="Enter Invoice No or Mobile..." 
-                className="flex-grow p-3 border rounded-lg focus:ring-2 focus:ring-brand-blue outline-none"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              />
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100">
+            <h2 className="text-2xl font-bold mb-8 text-brand-dark border-b pb-4">Invoice History</h2>
+            <div className="flex gap-4 mb-8 max-w-2xl">
+              <div className="relative flex-grow">
+                <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
+                <input 
+                  type="text" 
+                  placeholder="Search Invoice No or Mobile..." 
+                  className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-blue focus:border-brand-blue outline-none transition"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                />
+              </div>
               <button 
                 onClick={handleSearch}
-                className="bg-brand-blue text-white px-6 py-3 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition"
+                className="bg-brand-dark text-white px-8 py-3 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition shadow-lg"
               >
-                <Search size={20} /> Search
+                Search
               </button>
             </div>
             
-            <div className="overflow-x-auto">
+            <div className="overflow-hidden rounded-lg border border-gray-200">
               <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-100 text-gray-600 uppercase text-sm">
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Invoice #</th>
-                    <th className="p-3">Customer</th>
-                    <th className="p-3">Mobile</th>
-                    <th className="p-3 text-right">Amount</th>
-                    <th className="p-3 text-center">Action</th>
+                <thead className="bg-gray-50">
+                  <tr className="text-gray-600 uppercase text-xs font-semibold tracking-wider">
+                    <th className="p-4">Date</th>
+                    <th className="p-4">Invoice #</th>
+                    <th className="p-4">Customer</th>
+                    <th className="p-4">Mobile</th>
+                    <th className="p-4 text-right">Amount</th>
+                    <th className="p-4 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-gray-100">
                   {searchResults.length > 0 ? searchResults.map(inv => (
-                    <tr key={inv.id} className="border-b hover:bg-gray-50">
-                      <td className="p-3">{new Date(inv.created_at).toLocaleDateString()}</td>
-                      <td className="p-3 font-mono">{inv.invoice_no}</td>
-                      <td className="p-3">{inv.customer_name}</td>
-                      <td className="p-3">{inv.mobile}</td>
-                      <td className="p-3 text-right font-bold">₹{inv.total_amount}</td>
-                      <td className="p-3 text-center">
-                        <button onClick={() => loadInvoice(inv)} className="text-brand-blue hover:underline">View</button>
+                    <tr key={inv.id} className="hover:bg-blue-50 transition-colors">
+                      <td className="p-4 text-sm text-gray-600">{new Date(inv.created_at).toLocaleDateString()}</td>
+                      <td className="p-4 font-mono font-medium text-brand-dark">{inv.invoice_no}</td>
+                      <td className="p-4 font-medium">{inv.customer_name}</td>
+                      <td className="p-4 text-gray-600">{inv.mobile}</td>
+                      <td className="p-4 text-right font-bold text-brand-dark">₹{inv.total_amount}</td>
+                      <td className="p-4 text-center">
+                        <button onClick={() => loadInvoice(inv)} className="text-brand-blue hover:text-blue-700 font-medium text-sm">Open</button>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={6} className="p-8 text-center text-gray-500">No records found. Try searching.</td>
+                      <td colSpan={6} className="p-12 text-center text-gray-400 italic">No records found. Try searching.</td>
                     </tr>
                   )}
                 </tbody>
@@ -255,99 +292,207 @@ const App: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex flex-col xl:flex-row gap-8">
+          <div className="flex flex-col xl:flex-row gap-12 items-start">
             
             {/* LEFT COLUMN: EDITOR */}
-            <div className="flex-1 space-y-6">
+            <div className="flex-1 space-y-8 w-full">
               
               {/* Card: Invoice Meta & Customer */}
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-4 border-b pb-2">
-                  <h3 className="font-bold text-gray-700">Customer Details</h3>
-                  <div className="flex gap-2">
-                    <div className="bg-gray-100 px-3 py-1 rounded text-sm font-mono">
-                      Inv: {invoice.invoiceNo}
-                    </div>
-                    <input 
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-brand-red"></div>
+                
+                <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-800">Invoice Details</h3>
+                    <p className="text-sm text-gray-500">Enter customer and vehicle information</p>
+                  </div>
+                  
+                  <div className="flex flex-col items-end gap-2">
+                     <div className="flex items-center gap-2">
+                         <span className="text-sm font-semibold text-gray-500">Invoice No:</span>
+                         <span className="bg-gray-100 text-brand-dark px-3 py-1 rounded-md font-mono font-bold border border-gray-200">
+                            {invoice.invoiceNo}
+                        </span>
+                     </div>
+                     <input 
                       type="date" 
-                      className="bg-gray-100 px-2 py-1 rounded text-sm"
+                      className="bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-md text-sm outline-none focus:border-brand-blue"
                       value={invoice.date}
                       onChange={(e) => setInvoice({...invoice, date: e.target.value})}
                     />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <input placeholder="Customer Name" className="p-2 border rounded" value={invoice.customer.name} onChange={e => handleCustomerChange('name', e.target.value)} />
-                  <input placeholder="Mobile Number" className="p-2 border rounded" value={invoice.customer.mobile} onChange={e => handleCustomerChange('mobile', e.target.value)} />
-                  <input placeholder="Vehicle Model (e.g. Swift Dzire)" className="p-2 border rounded" value={invoice.customer.vehicleName} onChange={e => handleCustomerChange('vehicleName', e.target.value)} />
-                  <input placeholder="Vehicle Number (TN-XX-XX-XXXX)" className="p-2 border rounded uppercase" value={invoice.customer.vehicleNumber} onChange={e => handleCustomerChange('vehicleNumber', e.target.value)} />
-                  <input placeholder="Address" className="p-2 border rounded md:col-span-2" value={invoice.customer.address} onChange={e => handleCustomerChange('address', e.target.value)} />
-                  <input placeholder="GSTIN (Optional)" className="p-2 border rounded" value={invoice.customer.gstin || ''} onChange={e => handleCustomerChange('gstin', e.target.value)} />
+                {/* Logo Upload Section */}
+                 <div className="mb-6 flex items-center gap-4 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
+                    <div className="w-16 h-16 bg-white rounded border flex items-center justify-center overflow-hidden">
+                       {invoice.logo ? (
+                         <img src={invoice.logo} alt="Logo" className="w-full h-full object-contain" />
+                       ) : (
+                         <ImageIcon className="text-gray-300" />
+                       )}
+                    </div>
+                    <div>
+                       <p className="text-sm font-semibold text-gray-700">Company Logo</p>
+                       <p className="text-xs text-gray-500 mb-2">Upload to display on invoice</p>
+                       <input 
+                          type="file" 
+                          ref={fileInputRef}
+                          className="hidden" 
+                          accept="image/*"
+                          onChange={handleLogoUpload}
+                        />
+                       <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-xs bg-white border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 flex items-center gap-2 transition"
+                       >
+                         <Upload size={14} /> Upload Logo
+                       </button>
+                    </div>
+                 </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1">
+                     <label className="text-xs font-semibold text-gray-500 uppercase">Customer Name</label>
+                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.name} onChange={e => handleCustomerChange('name', e.target.value)} placeholder="Full Name" />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-xs font-semibold text-gray-500 uppercase">Mobile Number</label>
+                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.mobile} onChange={e => handleCustomerChange('mobile', e.target.value)} placeholder="10-digit Mobile" />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Model</label>
+                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.vehicleName} onChange={e => handleCustomerChange('vehicleName', e.target.value)} placeholder="e.g. Swift Dzire" />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Number</label>
+                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition uppercase font-mono" value={invoice.customer.vehicleNumber} onChange={e => handleCustomerChange('vehicleNumber', e.target.value)} placeholder="TN-XX-XX-XXXX" />
+                  </div>
+                  <div className="md:col-span-2 space-y-1">
+                     <label className="text-xs font-semibold text-gray-500 uppercase">Address</label>
+                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.address} onChange={e => handleCustomerChange('address', e.target.value)} placeholder="Full Address" />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN (Optional)</label>
+                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.gstin || ''} onChange={e => handleCustomerChange('gstin', e.target.value)} placeholder="GST Number" />
+                  </div>
                 </div>
               </div>
 
               {/* Card: Items */}
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-bold text-gray-700">Service / Parts</h3>
-                  <button onClick={addItem} className="flex items-center gap-1 text-sm bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700">
-                    <Plus size={16} /> Add Row
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                <div className="flex justify-between items-center mb-6">
+                  <div>
+                    <h3 className="font-bold text-lg text-gray-800">Services & Parts</h3>
+                    <p className="text-sm text-gray-500">List all services provided</p>
+                  </div>
+                  <button onClick={addItem} className="flex items-center gap-2 text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 shadow-md transition font-medium">
+                    <Plus size={16} /> Add Item
                   </button>
                 </div>
                 
                 <div className="space-y-3">
                   {invoice.items.map((item, idx) => (
-                    <div key={item.id} className="flex gap-2 items-start">
-                      <span className="pt-2 text-xs text-gray-400 w-4">{idx + 1}.</span>
-                      <input 
-                        placeholder="Description" 
-                        className="flex-grow p-2 border rounded" 
-                        value={item.description} 
-                        onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                      />
-                      <div className="w-24">
+                    <div key={item.id} className="flex gap-3 items-start group">
+                      <span className="pt-3 text-xs text-gray-400 w-6 font-mono">{idx + 1}.</span>
+                      <div className="flex-grow">
+                        <input 
+                          placeholder="Description of Service / Part" 
+                          className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" 
+                          value={item.description} 
+                          onChange={(e) => updateItem(item.id, 'description', e.target.value)}
+                        />
+                      </div>
+                      <div className="w-28">
                         <input 
                           type="number" placeholder="Rate" 
-                          className="w-full p-2 border rounded text-right" 
+                          className="w-full p-2.5 border border-gray-300 rounded-lg text-right focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" 
                           value={item.rate} 
                           onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)}
                         />
                       </div>
-                      <div className="w-16">
+                      <div className="w-20">
                         <input 
                           type="number" placeholder="Qty" 
-                          className="w-full p-2 border rounded text-center" 
+                          className="w-full p-2.5 border border-gray-300 rounded-lg text-center focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" 
                           value={item.quantity} 
                           onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
                         />
                       </div>
-                      <div className="w-24 pt-2 text-right font-mono font-medium text-gray-700">
+                      <div className="w-28 pt-3 text-right font-mono font-bold text-gray-700">
                         {item.total.toFixed(2)}
                       </div>
-                      <button onClick={() => removeItem(item.id)} className="p-2 text-red-400 hover:text-red-600">
-                        <Trash2 size={16} />
+                      <button onClick={() => removeItem(item.id)} className="p-3 text-gray-300 hover:text-red-500 transition group-hover:text-red-400">
+                        <Trash2 size={18} />
                       </button>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Card: Payments & Discounts */}
-              <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  
-                  {/* Payments */}
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                       <h3 className="font-bold text-gray-700 text-sm uppercase">Payment Methods</h3>
-                       <button onClick={addPayment} className="text-xs text-blue-600 font-bold">+ Split Payment</button>
+              {/* Card: Calculation & Payment - Reordered */}
+              <div className="space-y-6">
+                
+                {/* 1. Grand Total & Summary (MOVED UPPER) */}
+                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-brand-dark"></div>
+                    <h3 className="font-bold text-lg text-gray-800 mb-4">Payment Summary</h3>
+                    
+                    <div className="bg-gray-50 p-6 rounded-lg border border-gray-100">
+                      <div className="flex justify-between mb-3 text-gray-600">
+                        <span className="font-medium">Subtotal</span>
+                        <span className="font-bold text-gray-800 font-mono text-lg">₹ {subtotal.toFixed(2)}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between mb-4 gap-4 py-3 border-y border-dashed border-gray-200">
+                        <div className="flex items-center gap-2">
+                           <span className="text-sm font-medium text-gray-500">Discount:</span>
+                            <select 
+                              className="bg-white border border-gray-300 rounded text-sm p-1.5 focus:border-brand-blue outline-none"
+                              value={invoice.discountType}
+                              onChange={(e) => setInvoice({...invoice, discountType: e.target.value as any})}
+                            >
+                              <option value="FIXED">Flat (₹)</option>
+                              <option value="PERCENT">Percent (%)</option>
+                            </select>
+                        </div>
+                        <input 
+                          type="number" 
+                          className="w-24 border border-gray-300 rounded p-1.5 text-right text-sm font-medium outline-none focus:border-brand-blue"
+                          value={invoice.discountValue}
+                          onChange={(e) => setInvoice({...invoice, discountValue: parseFloat(e.target.value) || 0})}
+                        />
+                      </div>
+
+                      <div className="flex justify-between items-end">
+                        <span className="text-xl font-bold text-brand-dark">Grand Total</span>
+                        <div className="text-right">
+                          <span className="text-4xl font-extrabold text-brand-blue tracking-tight">₹ {grandTotal}</span>
+                          <p className="text-xs text-gray-500 font-medium mt-1 uppercase tracking-wide">Rounded Amount</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="space-y-2">
+                  </div>
+
+                  {/* 2. Payment Methods (MOVED LOWER) */}
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
+                    <div className="flex justify-between items-center mb-4">
+                       <div>
+                          <h3 className="font-bold text-lg text-gray-800">Payment Modes</h3>
+                          <p className="text-sm text-gray-500">Split payment across multiple methods</p>
+                       </div>
+                       <button onClick={addPayment} className="text-sm font-bold text-brand-blue hover:bg-blue-50 px-3 py-1.5 rounded transition">
+                         + Split Payment
+                       </button>
+                    </div>
+                    
+                    <div className="space-y-3">
                       {invoice.payments.map((p) => (
-                        <div key={p.id} className="flex gap-2">
+                        <div key={p.id} className="flex gap-3 items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
                           <select 
-                            className="border rounded p-2 text-sm bg-white"
+                            className="border border-gray-300 rounded-md p-2 text-sm bg-white focus:border-brand-blue outline-none w-32"
                             value={p.method}
                             onChange={(e) => updatePayment(p.id, 'method', e.target.value)}
                           >
@@ -357,106 +502,72 @@ const App: React.FC = () => {
                             <option>Bank Transfer</option>
                           </select>
                           <input 
-                            className="border rounded p-2 w-24 text-sm"
+                            className="border border-gray-300 rounded-md p-2 w-32 text-sm font-mono text-right focus:border-brand-blue outline-none"
                             type="number"
                             placeholder="Amount"
                             value={p.amount}
                             onChange={(e) => updatePayment(p.id, 'amount', parseFloat(e.target.value) || 0)}
                           />
                            <input 
-                            className="border rounded p-2 flex-grow text-sm"
+                            className="border border-gray-300 rounded-md p-2 flex-grow text-sm focus:border-brand-blue outline-none"
                             type="text"
-                            placeholder="Ref ID (Optional)"
+                            placeholder="Reference ID (Optional)"
                             value={p.reference || ''}
                             onChange={(e) => updatePayment(p.id, 'reference', e.target.value)}
                           />
-                          <button onClick={() => removePayment(p.id)} className="text-red-400"><Trash2 size={14}/></button>
+                          <button onClick={() => removePayment(p.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={16}/></button>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  {/* Summary & Discount */}
-                  <div className="bg-gray-50 p-4 rounded border">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-600">Subtotal</span>
-                      <span className="font-bold">₹ {subtotal.toFixed(2)}</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between mb-2 gap-2">
-                      <select 
-                        className="bg-white border rounded text-sm p-1"
-                        value={invoice.discountType}
-                        onChange={(e) => setInvoice({...invoice, discountType: e.target.value as any})}
-                      >
-                        <option value="FIXED">Discount (₹)</option>
-                        <option value="PERCENT">Discount (%)</option>
-                      </select>
-                      <input 
-                        type="number" 
-                        className="w-20 border rounded p-1 text-right text-sm"
-                        value={invoice.discountValue}
-                        onChange={(e) => setInvoice({...invoice, discountValue: parseFloat(e.target.value) || 0})}
-                      />
-                    </div>
-
-                    <div className="border-t pt-2 mt-2 flex justify-between items-end">
-                      <span className="text-lg font-bold text-gray-800">Grand Total</span>
-                      <div className="text-right">
-                        <span className="text-2xl font-bold text-brand-blue">₹ {grandTotal}</span>
-                        <p className="text-xs text-gray-500">Rounded</p>
-                      </div>
-                    </div>
-                  </div>
-
-                </div>
               </div>
 
               {/* Action Bar */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sticky bottom-4 z-40 bg-white/90 p-4 backdrop-blur shadow-lg rounded-xl border border-gray-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sticky bottom-6 z-40 bg-white/90 p-4 backdrop-blur-md shadow-2xl rounded-xl border border-gray-200">
                 <button 
                   onClick={handleNewInvoice}
-                  className="flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
                 >
-                  <RefreshCw size={20} /> Reset
+                  <RefreshCw size={18} /> Reset
                 </button>
                 <button 
                   onClick={handleSaveToDB}
                   disabled={isSaving}
-                  className="flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition shadow-lg shadow-green-600/20"
                 >
-                   <Save size={20} /> {isSaving ? 'Saving...' : 'Save DB'}
+                   <Save size={18} /> {isSaving ? 'Saving...' : 'Save DB'}
                 </button>
                 <button 
                   onClick={() => window.print()}
-                  className="flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-white bg-gray-700 hover:bg-gray-800"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-gray-700 hover:bg-gray-800 transition shadow-lg shadow-gray-700/20"
                 >
-                   <Printer size={20} /> Print PDF
+                   <Printer size={18} /> Print PDF
                 </button>
                  <button 
                   onClick={handleDownloadJPEG}
-                  className="flex items-center justify-center gap-2 p-3 rounded-lg font-semibold text-white bg-brand-blue hover:bg-blue-600"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-brand-blue hover:bg-blue-700 transition shadow-lg shadow-blue-600/20"
                 >
-                   <Download size={20} /> Export JPG
+                   <Download size={18} /> Export JPG
                 </button>
               </div>
 
             </div>
 
             {/* RIGHT COLUMN: PREVIEW */}
-            <div className="hidden xl:block w-[240mm]">
-              <div className="sticky top-24">
-                <h3 className="font-bold text-gray-500 mb-2 uppercase text-xs tracking-wider">Live A4 Preview</h3>
-                <InvoicePreview 
-                  ref={printRef} 
-                  data={invoice} 
-                  calculations={{ subtotal, discountAmount, grandTotal }} 
-                />
+            <div className="hidden xl:flex flex-col items-center w-[250mm] flex-shrink-0 bg-gray-200/50 p-8 rounded-xl border-dashed border-2 border-gray-300 sticky top-24">
+              <div className="mb-4 flex items-center gap-2 text-gray-500 font-semibold uppercase text-xs tracking-wider">
+                  <Printer size={14} /> Live A4 Preview
               </div>
+              <InvoicePreview 
+                ref={printRef} 
+                data={invoice} 
+                calculations={{ subtotal, discountAmount, grandTotal }} 
+              />
             </div>
 
-            {/* Mobile Preview Toggle (Simple workaround for complex layouts) */}
-            <div className="block xl:hidden mt-8">
+            {/* Mobile Preview Toggle */}
+            <div className="block xl:hidden mt-8 w-full">
                <h3 className="font-bold text-gray-800 mb-4 text-center">Invoice Preview</h3>
                <InvoicePreview 
                   ref={printRef} 

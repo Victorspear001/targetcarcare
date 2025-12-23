@@ -25,7 +25,7 @@ const SUPABASE_KEY = getEnv('VITE_SUPABASE_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export const saveInvoice = async (invoice: InvoiceData, grandTotal: number) => {
-  if (SUPABASE_URL === 'https://xyz.supabase.co') {
+  if (SUPABASE_URL === 'https://qpvdizfkgtrxwcnacevr.supabase.co') {
     console.warn("Supabase credentials missing. Mocking save. Update services/supabase.ts");
     // Mock success for UI testing
     return { error: null, data: { id: Date.now() } };
@@ -50,7 +50,7 @@ export const saveInvoice = async (invoice: InvoiceData, grandTotal: number) => {
 
 export const searchInvoices = async (term: string): Promise<SavedInvoice[]> => {
   if (!term) return [];
-  if (SUPABASE_URL === 'https://xyz.supabase.co') {
+  if (SUPABASE_URL === 'https://qpvdizfkgtrxwcnacevr.supabase.co') {
      console.warn("Supabase credentials missing. Mocking search. Update services/supabase.ts");
      return [];
   }
