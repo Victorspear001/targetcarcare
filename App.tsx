@@ -191,8 +191,9 @@ const App: React.FC = () => {
     const { element, originalShadow } = opts;
 
     try {
+      // Increased scale to 3 for higher quality
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 3, 
         useCORS: true, 
         logging: false,
         backgroundColor: '#ffffff',
@@ -250,8 +251,9 @@ const App: React.FC = () => {
     const { element, originalShadow } = opts;
 
     try {
+      // Increased scale to 3 for higher quality
       const canvas = await html2canvas(element, {
-        scale: 2,
+        scale: 3,
         useCORS: true, 
         logging: false,
         backgroundColor: '#ffffff',
