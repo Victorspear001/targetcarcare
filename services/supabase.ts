@@ -4,7 +4,7 @@ import { InvoiceData, SavedInvoice } from '../types';
 // 1. FOR DEPLOYMENT (Vercel/Vite): 
 //    Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY in your Vercel Project Settings > Environment Variables.
 // 2. FOR LOCAL TESTING:
-//    You can paste your string values directly into the strings below if not using a .env file.
+//    Replace 'YOUR_SUPABASE_URL' and 'YOUR_SUPABASE_KEY' below with your actual credentials.
 
 const getEnv = (key: string) => {
   // Check for Vite environment variables
@@ -18,19 +18,15 @@ const getEnv = (key: string) => {
   return '';
 };
 
-const SUPABASE_URL = getEnv('VITE_SUPABASE_URL') || 'https://qpvdizfkgtrxwcnacevr.supabase.co'; // <--- PASTE YOUR URL HERE IF LOCAL
-const SUPABASE_KEY = getEnv('VITE_SUPABASE_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFwdmRpemZrZ3RyeHdjbmFjZXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODAyMTAsImV4cCI6MjA4MjA1NjIxMH0.1NH2R_mLc695C4iR9KP6SfrPs9KzgCJbhldYVYTehVo';         // <--- PASTE YOUR KEY HERE IF LOCAL
+// !!! IMPORTANT: REPLACE THESE WITH YOUR ACTUAL SUPABASE CREDENTIALS !!!
+const SUPABASE_URL = getEnv('VITE_SUPABASE_URL') || 'https://qpvdizfkgtrxwcnacevr.supabase.co'; 
+const SUPABASE_KEY = getEnv('VITE_SUPABASE_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFwdmRpemZrZ3RyeHdjbmFjZXZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY0ODAyMTAsImV4cCI6MjA4MjA1NjIxMH0.1NH2R_mLc695C4iR9KP6SfrPs9KzgCJbhldYVYTehVo';
 
 // Initialize the client.
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 export const saveInvoice = async (invoice: InvoiceData, grandTotal: number) => {
-  if (SUPABASE_URL === 'https://qpvdizfkgtrxwcnacevr.supabase.co') {
-    console.warn("Supabase credentials missing. Mocking save. Update services/supabase.ts");
-    // Mock success for UI testing
-    return { error: null, data: { id: Date.now() } };
-  }
-
+  // We explicitly insert into the 'invoices' table defined in your SQL
   const { data, error } = await supabase
     .from('invoices')
     .insert([
@@ -50,10 +46,6 @@ export const saveInvoice = async (invoice: InvoiceData, grandTotal: number) => {
 
 export const searchInvoices = async (term: string): Promise<SavedInvoice[]> => {
   if (!term) return [];
-  if (SUPABASE_URL === 'https://qpvdizfkgtrxwcnacevr.supabase.co') {
-     console.warn("Supabase credentials missing. Mocking search. Update services/supabase.ts");
-     return [];
-  }
 
   const { data, error } = await supabase
     .from('invoices')
