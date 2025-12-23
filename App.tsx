@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer } from 'lucide-react';
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
 import { saveInvoice, searchInvoices } from './services/supabase';
@@ -162,7 +162,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadJPEG = async () => {
+  const handleDownloadImage = async () => {
     const element = document.getElementById('invoice-capture');
     if (!element) {
       alert("Could not find invoice preview to capture.");
@@ -179,26 +179,40 @@ const App: React.FC = () => {
       await document.fonts.ready;
       
       const canvas = await html2canvas(element, {
-        scale: 3, // High resolution (3x standard)
+        scale: 2, // 2x scale is sufficient for screen/print without crashing/bloating
         useCORS: true, // Allow cross-origin images
         logging: false,
         backgroundColor: '#ffffff', // Ensure white background
         windowWidth: element.scrollWidth, // Ensure full width
         windowHeight: element.scrollHeight, // Ensure full height
         onclone: (clonedDoc) => {
-            // Optional: Extra cleanup in the cloned document if needed
             const clonedEl = clonedDoc.getElementById('invoice-capture');
-            if (clonedEl) clonedEl.style.boxShadow = 'none';
+            if (clonedEl) {
+                clonedEl.style.boxShadow = 'none';
+            }
         }
       });
       
-      const link = document.createElement('a');
-      link.download = `${invoice.invoiceNo}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.95);
-      link.click();
+      // Use Blob + URL.createObjectURL for better compatibility than Data URL
+      canvas.toBlob((blob) => {
+        if (!blob) {
+            console.error("Canvas is empty");
+            alert("Failed to generate image.");
+            return;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `${invoice.invoiceNo}.png`;
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+
     } catch (err) {
       console.error("Export failed", err);
-      alert("Failed to export JPEG. Please check console for details.");
+      alert("Failed to export image. Please check console for details.");
     } finally {
       // Restore shadow
       element.style.boxShadow = originalShadow;
@@ -208,8 +222,8 @@ const App: React.FC = () => {
   const handleSaveAndDownload = async () => {
       const saved = await handleSaveToDB(true);
       if (saved) {
-          await handleDownloadJPEG();
-          alert("Invoice Saved & Downloaded!");
+          await handleDownloadImage();
+          // No alert here, smoother flow
       }
   };
 
@@ -572,10 +586,10 @@ const App: React.FC = () => {
                 </button>
                 
                  <button 
-                  onClick={handleDownloadJPEG}
+                  onClick={handleDownloadImage}
                   className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-lg shadow-blue-600/20"
                 >
-                   <Download size={18} /> Download JPG
+                   <Download size={18} /> Download PNG
                 </button>
 
                 <button 
@@ -583,7 +597,7 @@ const App: React.FC = () => {
                   disabled={isSaving}
                   className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-brand-red hover:bg-red-700 transition shadow-lg shadow-red-600/20"
                 >
-                   <Upload size={18} /> Save & Download
+                   <Upload size={18} /> Save & Down.
                 </button>
               </div>
 
@@ -592,7 +606,7 @@ const App: React.FC = () => {
             {/* RIGHT COLUMN: PREVIEW */}
             <div className="hidden xl:flex flex-col items-center w-[250mm] flex-shrink-0 bg-gray-200/50 p-8 rounded-xl border-dashed border-2 border-gray-300 sticky top-24">
               <div className="mb-4 flex items-center gap-2 text-gray-500 font-semibold uppercase text-xs tracking-wider">
-                  <ImageIcon size={14} /> Live A4 Preview
+                  <Printer size={14} /> Live A4 Preview
               </div>
               <InvoicePreview 
                 ref={printRef} 
