@@ -59,3 +59,12 @@ export const searchInvoices = async (term: string): Promise<SavedInvoice[]> => {
   }
   return data as SavedInvoice[];
 };
+
+export const deleteInvoice = async (id: number) => {
+  const { error } = await supabase
+    .from('invoices')
+    .delete()
+    .eq('id', id);
+  
+  return { error };
+};

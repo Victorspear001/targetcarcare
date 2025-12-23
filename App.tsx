@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer, Share2 } from 'lucide-react';
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
-import { saveInvoice, searchInvoices } from './services/supabase';
+import { saveInvoice, searchInvoices, deleteInvoice } from './services/supabase';
 import html2canvas from 'html2canvas';
 
 // Helper to generate Invoice ID (TCC + 4 digits)
@@ -162,49 +162,107 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDownloadImage = async () => {
+  // Helper to get the HTML element and config
+  const getCanvasOptions = async () => {
     // 1. Identify which preview is currently visible
-    // We check the desktop one first. If it's hidden (offsetParent === null), we use the mobile one.
     let element = document.getElementById('invoice-capture-desktop');
     if (!element || element.offsetParent === null) {
         element = document.getElementById('invoice-capture-mobile');
     }
 
     if (!element) {
-      alert("Could not find invoice preview to capture.");
-      return;
+      alert("Could not find invoice preview to capture. Please ensure you are on the create tab.");
+      return null;
     }
 
     // Capture original style
     const originalShadow = element.style.boxShadow;
-    // Remove shadow for clean capture
     element.style.boxShadow = 'none';
 
-    try {
-      // 1. Force a small delay to ensure styles apply
-      await new Promise(resolve => setTimeout(resolve, 100));
+    // Force delay
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-      // 2. Configure html2canvas
-      // IMPORTANT: removed x, y, width, height overrides to fix cropping issues
+    return { element, originalShadow };
+  };
+
+  const handleShare = async () => {
+    const opts = await getCanvasOptions();
+    if (!opts) return;
+    const { element, originalShadow } = opts;
+
+    try {
       const canvas = await html2canvas(element, {
-        scale: 2, // 2x is good balance of quality and size
+        scale: 2,
         useCORS: true, 
         logging: false,
         backgroundColor: '#ffffff',
-        // onclone lets us clean up the cloned node if needed
         onclone: (clonedDoc) => {
-            // Depending on which one we captured, we clean that specific one
             const targetId = element?.id;
             const clonedEl = clonedDoc.getElementById(targetId || 'invoice-capture-desktop');
-            if (clonedEl) {
-                clonedEl.style.boxShadow = 'none';
-            }
+            if (clonedEl) clonedEl.style.boxShadow = 'none';
+        }
+      });
+
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+            alert("Failed to generate image for sharing.");
+            return;
+        }
+
+        const file = new File([blob], `${invoice.invoiceNo}.png`, { type: 'image/png' });
+
+        // Check if Web Share API is supported for Files
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `Invoice ${invoice.invoiceNo}`,
+              text: `Here is the invoice for ${invoice.customer.name}`
+            });
+          } catch (shareError) {
+             if ((shareError as Error).name !== 'AbortError') {
+                 console.error('Share failed', shareError);
+             }
+          }
+        } else {
+          // Fallback for Desktop: Download it
+          alert("Direct sharing not supported on this device. Downloading image instead.");
+          const link = document.createElement('a');
+          link.download = `${invoice.invoiceNo}.png`;
+          link.href = canvas.toDataURL("image/png");
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }, 'image/png');
+
+    } catch (err) {
+      console.error("Share failed", err);
+      alert("Failed to share image.");
+    } finally {
+      element.style.boxShadow = originalShadow;
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    const opts = await getCanvasOptions();
+    if (!opts) return;
+    const { element, originalShadow } = opts;
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true, 
+        logging: false,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+            const targetId = element?.id;
+            const clonedEl = clonedDoc.getElementById(targetId || 'invoice-capture-desktop');
+            if (clonedEl) clonedEl.style.boxShadow = 'none';
         }
       });
       
-      // 3. Generate PNG Data URL
       const image = canvas.toDataURL("image/png");
-
       const link = document.createElement('a');
       link.download = `${invoice.invoiceNo}.png`;
       link.href = image;
@@ -214,17 +272,16 @@ const App: React.FC = () => {
 
     } catch (err) {
       console.error("Export failed", err);
-      alert("Failed to export image. Please check console for details.");
+      alert("Failed to export image.");
     } finally {
-      // Restore shadow
-      if (element) element.style.boxShadow = originalShadow;
+      element.style.boxShadow = originalShadow;
     }
   };
 
-  const handleSaveAndDownload = async () => {
+  const handleSaveAndShare = async () => {
       const saved = await handleSaveToDB(true);
       if (saved) {
-          await handleDownloadImage();
+          await handleShare();
       }
   };
 
@@ -237,6 +294,26 @@ const App: React.FC = () => {
   const loadInvoice = (saved: SavedInvoice) => {
     setInvoice(saved.data);
     setActiveTab('create');
+  };
+
+  const handleDownloadFromSearch = (saved: SavedInvoice) => {
+    setInvoice(saved.data);
+    setActiveTab('create');
+    // Wait for the render to happen then trigger download
+    setTimeout(() => {
+        handleDownloadImage();
+    }, 800);
+  };
+
+  const handleDelete = async (id: number) => {
+    if (window.confirm("Are you sure you want to delete this invoice?")) {
+        const { error } = await deleteInvoice(id);
+        if (error) {
+            alert("Error deleting invoice");
+        } else {
+            setSearchResults(prev => prev.filter(item => item.id !== id));
+        }
+    }
   };
 
   const handleNewInvoice = () => {
@@ -312,9 +389,8 @@ const App: React.FC = () => {
                     <th className="p-4">Date</th>
                     <th className="p-4">Invoice #</th>
                     <th className="p-4">Customer</th>
-                    <th className="p-4">Mobile</th>
                     <th className="p-4 text-right">Amount</th>
-                    <th className="p-4 text-center">Action</th>
+                    <th className="p-4 text-center">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -323,15 +399,22 @@ const App: React.FC = () => {
                       <td className="p-4 text-sm text-gray-600">{new Date(inv.created_at).toLocaleDateString()}</td>
                       <td className="p-4 font-mono font-medium text-brand-dark">{inv.invoice_no}</td>
                       <td className="p-4 font-medium">{inv.customer_name}</td>
-                      <td className="p-4 text-gray-600">{inv.mobile}</td>
                       <td className="p-4 text-right font-bold text-brand-dark">₹{inv.total_amount}</td>
-                      <td className="p-4 text-center">
-                        <button onClick={() => loadInvoice(inv)} className="text-brand-blue hover:text-blue-700 font-medium text-sm">Open</button>
+                      <td className="p-4 text-center flex items-center justify-center gap-3">
+                        <button onClick={() => loadInvoice(inv)} className="text-brand-blue hover:text-blue-700 font-medium text-sm flex items-center gap-1">
+                             Open
+                        </button>
+                        <button onClick={() => handleDownloadFromSearch(inv)} title="Download" className="text-gray-500 hover:text-gray-800">
+                             <Download size={18} />
+                        </button>
+                        <button onClick={() => handleDelete(inv.id)} title="Delete" className="text-red-400 hover:text-red-600">
+                             <Trash2 size={18} />
+                        </button>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={6} className="p-12 text-center text-gray-400 italic">No records found. Try searching.</td>
+                      <td colSpan={5} className="p-12 text-center text-gray-400 italic">No records found. Try searching.</td>
                     </tr>
                   )}
                 </tbody>
@@ -587,18 +670,18 @@ const App: React.FC = () => {
                 </button>
                 
                  <button 
-                  onClick={handleDownloadImage}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-lg shadow-blue-600/20"
+                  onClick={handleShare}
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-green-600 hover:bg-green-700 transition shadow-lg shadow-green-600/20"
                 >
-                   <Download size={18} /> Download PNG
+                   <Share2 size={18} /> Share Image
                 </button>
 
                 <button 
-                  onClick={handleSaveAndDownload}
+                  onClick={handleSaveAndShare}
                   disabled={isSaving}
                   className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-brand-red hover:bg-red-700 transition shadow-lg shadow-red-600/20"
                 >
-                   <Upload size={18} /> Save & Down.
+                   <Upload size={18} /> Save & Share
                 </button>
               </div>
 
