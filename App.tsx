@@ -3,12 +3,7 @@ import { Plus, Trash2, Save, Download, Search, RefreshCw, Printer } from 'lucide
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
 import { saveInvoice, searchInvoices } from './services/supabase';
-
-declare global {
-  interface Window {
-    html2canvas: any;
-  }
-}
+import html2canvas from 'html2canvas';
 
 // Helper to generate Invoice ID
 const generateInvoiceNo = () => `INV-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -143,9 +138,9 @@ const App: React.FC = () => {
   };
 
   const handleDownloadJPEG = async () => {
-    if (!printRef.current || !window.html2canvas) return;
+    if (!printRef.current) return;
     try {
-      const canvas = await window.html2canvas(printRef.current, {
+      const canvas = await html2canvas(printRef.current, {
         scale: 2, // Higher quality
         useCORS: true,
         logging: false
