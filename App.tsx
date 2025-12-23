@@ -175,16 +175,26 @@ const App: React.FC = () => {
     element.style.boxShadow = 'none';
 
     try {
-      // Wait for fonts/images
-      await document.fonts.ready;
-      
+      // 1. Force a small delay to ensure styles apply
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // 2. Configure html2canvas more robustly
       const canvas = await html2canvas(element, {
-        scale: 2, // 2x scale is sufficient for screen/print without crashing/bloating
-        useCORS: true, // Allow cross-origin images
+        scale: 2, // 2x is good balance of quality and size
+        useCORS: true, 
         logging: false,
-        backgroundColor: '#ffffff', // Ensure white background
-        windowWidth: element.scrollWidth, // Ensure full width
-        windowHeight: element.scrollHeight, // Ensure full height
+        backgroundColor: '#ffffff',
+        
+        // Explicitly set dimensions and position to avoid scroll cropping issues
+        x: 0,
+        y: 0,
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+        
+        // Ensure the virtual window is large enough
+        windowWidth: element.scrollWidth, 
+        windowHeight: element.scrollHeight,
+
         onclone: (clonedDoc) => {
             const clonedEl = clonedDoc.getElementById('invoice-capture');
             if (clonedEl) {
@@ -193,22 +203,16 @@ const App: React.FC = () => {
         }
       });
       
-      // Use Blob + URL.createObjectURL for better compatibility than Data URL
-      canvas.toBlob((blob) => {
-        if (!blob) {
-            console.error("Canvas is empty");
-            alert("Failed to generate image.");
-            return;
-        }
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = `${invoice.invoiceNo}.png`;
-        link.href = url;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      }, 'image/png');
+      // 3. Fallback to toDataURL ('image/png') which is synchronous and widely supported
+      //    This avoids potential async Blob failures or null blobs in some contexts.
+      const image = canvas.toDataURL("image/png");
+
+      const link = document.createElement('a');
+      link.download = `${invoice.invoiceNo}.png`;
+      link.href = image;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
     } catch (err) {
       console.error("Export failed", err);
@@ -223,7 +227,6 @@ const App: React.FC = () => {
       const saved = await handleSaveToDB(true);
       if (saved) {
           await handleDownloadImage();
-          // No alert here, smoother flow
       }
   };
 
