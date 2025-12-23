@@ -3,3 +3,59 @@
 @tailwind utilities;
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap');
+
+/* PRINT STYLES */
+@media print {
+  /* 1. Hide everything by default */
+  body * {
+    visibility: hidden;
+  }
+
+  /* 2. Hide specific UI containers to be safe */
+  nav, 
+  .layout-editor, 
+  .action-bar, 
+  .mobile-preview-header,
+  button {
+    display: none !important;
+  }
+
+  /* 3. Setup the Page */
+  @page {
+    size: A4;
+    margin: 0; /* Important: Remove browser margins */
+  }
+
+  body {
+    background: white;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* 4. Make the invoice visible and position it */
+  #invoice-capture, #invoice-capture * {
+    visibility: visible;
+  }
+
+  #invoice-capture {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm !important;
+    height: 297mm !important;
+    margin: 0 !important;
+    padding: 0 !important; /* We handle padding inside the component */
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+    /* Ensure it fills the print page exactly */
+    z-index: 9999;
+  }
+  
+  /* Reset any flex/grid layout from the app wrapper */
+  #root, main, .layout-container {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+}

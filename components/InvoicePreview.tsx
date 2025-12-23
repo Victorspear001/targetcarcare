@@ -27,7 +27,7 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({
         style={{
           width: `${A4_WIDTH_MM}mm`,
           height: `${A4_HEIGHT_MM}mm`,
-          padding: '12mm 15mm',
+          padding: '12mm 15mm', // Padding for visual display
           boxSizing: 'border-box',
           fontSize: '10pt',
           fontFamily: '"Times New Roman", serif',

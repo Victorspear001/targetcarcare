@@ -160,24 +160,34 @@ const App: React.FC = () => {
   };
 
   const handleDownloadJPEG = async () => {
-    if (!printRef.current) return;
+    const element = document.getElementById('invoice-capture');
+    if (!element) {
+      alert("Could not find invoice preview to capture.");
+      return;
+    }
+
     try {
-      // Force a slight delay to ensure fonts render
+      // Wait for fonts/images
       await document.fonts.ready;
       
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2.5, // Higher quality
-        useCORS: true,
+      const canvas = await html2canvas(element, {
+        scale: 2, // High resolution
+        useCORS: true, // Allow cross-origin images (like external logos)
         logging: false,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff', // Ensure white background
+        windowWidth: 210 * 3.7795, // Simulate A4 width in pixels (~794px)
+        windowHeight: 297 * 3.7795, // Simulate A4 height in pixels (~1123px)
+        x: 0,
+        y: 0
       });
+      
       const link = document.createElement('a');
       link.download = `${invoice.invoiceNo}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.href = canvas.toDataURL('image/jpeg', 0.9);
       link.click();
     } catch (err) {
       console.error("Export failed", err);
-      alert("Failed to export JPEG");
+      alert("Failed to export JPEG. Please check console for details.");
     }
   };
 
@@ -233,7 +243,7 @@ const App: React.FC = () => {
       </nav>
 
       {/* Main Content */}
-      <main className="flex-grow p-6 md:p-10 max-w-[1600px] mx-auto w-full gap-10">
+      <main className="flex-grow p-6 md:p-10 max-w-[1600px] mx-auto w-full gap-10 layout-container">
         
         {activeTab === 'search' ? (
           <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100">
@@ -295,7 +305,7 @@ const App: React.FC = () => {
           <div className="flex flex-col xl:flex-row gap-12 items-start">
             
             {/* LEFT COLUMN: EDITOR */}
-            <div className="flex-1 space-y-8 w-full">
+            <div className="flex-1 space-y-8 w-full layout-editor">
               
               {/* Card: Invoice Meta & Customer */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
@@ -524,7 +534,7 @@ const App: React.FC = () => {
               </div>
 
               {/* Action Bar */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sticky bottom-6 z-40 bg-white/90 p-4 backdrop-blur-md shadow-2xl rounded-xl border border-gray-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sticky bottom-6 z-40 bg-white/90 p-4 backdrop-blur-md shadow-2xl rounded-xl border border-gray-200 action-bar">
                 <button 
                   onClick={handleNewInvoice}
                   className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
@@ -567,7 +577,7 @@ const App: React.FC = () => {
             </div>
 
             {/* Mobile Preview Toggle */}
-            <div className="block xl:hidden mt-8 w-full">
+            <div className="block xl:hidden mt-8 w-full mobile-preview-header">
                <h3 className="font-bold text-gray-800 mb-4 text-center">Invoice Preview</h3>
                <InvoicePreview 
                   ref={printRef} 
