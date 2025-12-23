@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Plus, Trash2, Save, Download, Search, RefreshCw, Printer, Upload, Image as ImageIcon } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database } from 'lucide-react';
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
 import { saveInvoice, searchInvoices } from './services/supabase';
@@ -142,18 +142,21 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSaveToDB = async () => {
+  const handleSaveToDB = async (silent = false) => {
     setIsSaving(true);
     try {
       const { error } = await saveInvoice(invoice, grandTotal);
       if (error) {
         alert("Failed to save invoice: " + error.message);
+        return false;
       } else {
-        alert("Invoice saved successfully!");
+        if (!silent) alert("Invoice uploaded to Supabase successfully!");
+        return true;
       }
     } catch (e) {
       console.error(e);
       alert("An unexpected error occurred.");
+      return false;
     } finally {
       setIsSaving(false);
     }
@@ -166,29 +169,48 @@ const App: React.FC = () => {
       return;
     }
 
+    // Capture original style
+    const originalShadow = element.style.boxShadow;
+    // Remove shadow for clean capture
+    element.style.boxShadow = 'none';
+
     try {
       // Wait for fonts/images
       await document.fonts.ready;
       
       const canvas = await html2canvas(element, {
-        scale: 2, // High resolution
-        useCORS: true, // Allow cross-origin images (like external logos)
+        scale: 3, // High resolution (3x standard)
+        useCORS: true, // Allow cross-origin images
         logging: false,
         backgroundColor: '#ffffff', // Ensure white background
-        windowWidth: 210 * 3.7795, // Simulate A4 width in pixels (~794px)
-        windowHeight: 297 * 3.7795, // Simulate A4 height in pixels (~1123px)
-        x: 0,
-        y: 0
+        windowWidth: element.scrollWidth, // Ensure full width
+        windowHeight: element.scrollHeight, // Ensure full height
+        onclone: (clonedDoc) => {
+            // Optional: Extra cleanup in the cloned document if needed
+            const clonedEl = clonedDoc.getElementById('invoice-capture');
+            if (clonedEl) clonedEl.style.boxShadow = 'none';
+        }
       });
       
       const link = document.createElement('a');
       link.download = `${invoice.invoiceNo}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.9);
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
       link.click();
     } catch (err) {
       console.error("Export failed", err);
       alert("Failed to export JPEG. Please check console for details.");
+    } finally {
+      // Restore shadow
+      element.style.boxShadow = originalShadow;
     }
+  };
+
+  const handleSaveAndDownload = async () => {
+      const saved = await handleSaveToDB(true);
+      if (saved) {
+          await handleDownloadJPEG();
+          alert("Invoice Saved & Downloaded!");
+      }
   };
 
   const handleSearch = async () => {
@@ -228,15 +250,15 @@ const App: React.FC = () => {
           <div className="flex gap-4">
             <button 
               onClick={() => setActiveTab('create')}
-              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm ${activeTab === 'create' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
+              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm flex items-center gap-2 ${activeTab === 'create' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
             >
-              New Invoice
+              <Plus size={16} /> New Bill
             </button>
             <button 
               onClick={() => setActiveTab('search')}
-              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm ${activeTab === 'search' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
+              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm flex items-center gap-2 ${activeTab === 'search' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
             >
-              History
+              <Database size={16} /> Search Bills
             </button>
           </div>
         </div>
@@ -247,7 +269,7 @@ const App: React.FC = () => {
         
         {activeTab === 'search' ? (
           <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100">
-            <h2 className="text-2xl font-bold mb-8 text-brand-dark border-b pb-4">Invoice History</h2>
+            <h2 className="text-2xl font-bold mb-8 text-brand-dark border-b pb-4">Search Saved Bills</h2>
             <div className="flex gap-4 mb-8 max-w-2xl">
               <div className="relative flex-grow">
                 <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
@@ -542,23 +564,26 @@ const App: React.FC = () => {
                   <RefreshCw size={18} /> Reset
                 </button>
                 <button 
-                  onClick={handleSaveToDB}
+                  onClick={() => handleSaveToDB(false)}
                   disabled={isSaving}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition shadow-lg shadow-green-600/20"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-gray-700 hover:bg-gray-800 disabled:opacity-50 transition shadow-lg shadow-gray-600/20"
                 >
                    <Save size={18} /> {isSaving ? 'Saving...' : 'Save DB'}
                 </button>
-                <button 
-                  onClick={() => window.print()}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-gray-700 hover:bg-gray-800 transition shadow-lg shadow-gray-700/20"
-                >
-                   <Printer size={18} /> Print PDF
-                </button>
+                
                  <button 
                   onClick={handleDownloadJPEG}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-brand-blue hover:bg-blue-700 transition shadow-lg shadow-blue-600/20"
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 transition shadow-lg shadow-blue-600/20"
                 >
-                   <Download size={18} /> Export JPG
+                   <Download size={18} /> Download JPG
+                </button>
+
+                <button 
+                  onClick={handleSaveAndDownload}
+                  disabled={isSaving}
+                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-brand-red hover:bg-red-700 transition shadow-lg shadow-red-600/20"
+                >
+                   <Upload size={18} /> Save & Download
                 </button>
               </div>
 
@@ -567,7 +592,7 @@ const App: React.FC = () => {
             {/* RIGHT COLUMN: PREVIEW */}
             <div className="hidden xl:flex flex-col items-center w-[250mm] flex-shrink-0 bg-gray-200/50 p-8 rounded-xl border-dashed border-2 border-gray-300 sticky top-24">
               <div className="mb-4 flex items-center gap-2 text-gray-500 font-semibold uppercase text-xs tracking-wider">
-                  <Printer size={14} /> Live A4 Preview
+                  <ImageIcon size={14} /> Live A4 Preview
               </div>
               <InvoicePreview 
                 ref={printRef} 
