@@ -8,13 +8,14 @@ interface InvoicePreviewProps {
     discountAmount: number;
     grandTotal: number;
   };
+  targetId?: string;
 }
 
 // Fixed dimensions for A4 compliance (210mm x 297mm)
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 
-export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({ data, calculations }, ref) => {
+export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({ data, calculations, targetId = "invoice-capture" }, ref) => {
   const { customer, items, invoiceNo, date, logo } = data;
   const { subtotal, discountAmount, grandTotal } = calculations;
 
@@ -22,7 +23,7 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({
     <div className="w-full overflow-x-auto flex justify-center">
       <div
         ref={ref}
-        id="invoice-capture"
+        id={targetId}
         className="bg-white text-black relative shadow-2xl flex-shrink-0"
         style={{
           width: `${A4_WIDTH_MM}mm`,

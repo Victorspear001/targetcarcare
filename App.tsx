@@ -163,7 +163,13 @@ const App: React.FC = () => {
   };
 
   const handleDownloadImage = async () => {
-    const element = document.getElementById('invoice-capture');
+    // 1. Identify which preview is currently visible
+    // We check the desktop one first. If it's hidden (offsetParent === null), we use the mobile one.
+    let element = document.getElementById('invoice-capture-desktop');
+    if (!element || element.offsetParent === null) {
+        element = document.getElementById('invoice-capture-mobile');
+    }
+
     if (!element) {
       alert("Could not find invoice preview to capture.");
       return;
@@ -178,33 +184,25 @@ const App: React.FC = () => {
       // 1. Force a small delay to ensure styles apply
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      // 2. Configure html2canvas more robustly
+      // 2. Configure html2canvas
+      // IMPORTANT: removed x, y, width, height overrides to fix cropping issues
       const canvas = await html2canvas(element, {
         scale: 2, // 2x is good balance of quality and size
         useCORS: true, 
         logging: false,
         backgroundColor: '#ffffff',
-        
-        // Explicitly set dimensions and position to avoid scroll cropping issues
-        x: 0,
-        y: 0,
-        width: element.offsetWidth,
-        height: element.offsetHeight,
-        
-        // Ensure the virtual window is large enough
-        windowWidth: element.scrollWidth, 
-        windowHeight: element.scrollHeight,
-
+        // onclone lets us clean up the cloned node if needed
         onclone: (clonedDoc) => {
-            const clonedEl = clonedDoc.getElementById('invoice-capture');
+            // Depending on which one we captured, we clean that specific one
+            const targetId = element?.id;
+            const clonedEl = clonedDoc.getElementById(targetId || 'invoice-capture-desktop');
             if (clonedEl) {
                 clonedEl.style.boxShadow = 'none';
             }
         }
       });
       
-      // 3. Fallback to toDataURL ('image/png') which is synchronous and widely supported
-      //    This avoids potential async Blob failures or null blobs in some contexts.
+      // 3. Generate PNG Data URL
       const image = canvas.toDataURL("image/png");
 
       const link = document.createElement('a');
@@ -219,7 +217,7 @@ const App: React.FC = () => {
       alert("Failed to export image. Please check console for details.");
     } finally {
       // Restore shadow
-      element.style.boxShadow = originalShadow;
+      if (element) element.style.boxShadow = originalShadow;
     }
   };
 
@@ -613,6 +611,7 @@ const App: React.FC = () => {
               </div>
               <InvoicePreview 
                 ref={printRef} 
+                targetId="invoice-capture-desktop"
                 data={invoice} 
                 calculations={{ subtotal, discountAmount, grandTotal }} 
               />
@@ -623,6 +622,7 @@ const App: React.FC = () => {
                <h3 className="font-bold text-gray-800 mb-4 text-center">Invoice Preview</h3>
                <InvoicePreview 
                   ref={printRef} 
+                  targetId="invoice-capture-mobile"
                   data={invoice} 
                   calculations={{ subtotal, discountAmount, grandTotal }} 
                 />
