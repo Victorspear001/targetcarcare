@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer, Share2 } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer, Share2, XCircle, CheckCircle, AlertCircle } from 'lucide-react';
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
 import { saveInvoice, searchInvoices, deleteInvoice } from './services/supabase';
@@ -30,12 +30,20 @@ const INITIAL_INVOICE: InvoiceData = {
   discountValue: 0
 };
 
+// Notification Type
+type NotificationType = {
+  message: string;
+  type: 'success' | 'error' | 'info';
+  id: number;
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'create' | 'search'>('create');
   const [invoice, setInvoice] = useState<InvoiceData>(INITIAL_INVOICE);
   const [isSaving, setIsSaving] = useState(false);
   const [searchResults, setSearchResults] = useState<SavedInvoice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [notifications, setNotifications] = useState<NotificationType[]>([]);
   
   const printRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -47,6 +55,20 @@ const App: React.FC = () => {
       setInvoice(prev => ({ ...prev, logo: savedLogo }));
     }
   }, []);
+
+  // --- Notification Helper ---
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { message, type, id }]);
+    // Auto dismiss
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 4000);
+  };
+
+  const removeNotification = (id: number) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   // --- Calculations ---
   const subtotal = invoice.items.reduce((sum, item) => sum + item.total, 0);
@@ -113,9 +135,7 @@ const App: React.FC = () => {
   };
 
   const addPayment = () => {
-     // Calculate already allocated amount
      const currentAllocated = invoice.payments.reduce((sum, p) => sum + p.amount, 0);
-     // The new payment should cover the remaining balance
      const remaining = Math.max(0, grandTotal - currentAllocated);
 
      setInvoice(prev => ({
@@ -132,30 +152,43 @@ const App: React.FC = () => {
   const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        showNotification("File too large. Please upload an image under 2MB.", 'error');
+        return;
+      }
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64String = reader.result as string;
         setInvoice(prev => ({ ...prev, logo: base64String }));
-        localStorage.setItem('companyLogo', base64String); // Persist for future
+        localStorage.setItem('companyLogo', base64String);
       };
       reader.readAsDataURL(file);
     }
   };
 
   const handleSaveToDB = async (silent = false) => {
+    if (!invoice.customer.name) {
+        showNotification("Please enter customer name.", 'error');
+        return false;
+    }
+
     setIsSaving(true);
     try {
       const { error } = await saveInvoice(invoice, grandTotal);
       if (error) {
-        alert("Failed to save invoice: " + error.message);
+        if (error.code === '23505') { // Postgres unique violation code
+             showNotification(`Invoice No '${invoice.invoiceNo}' already exists. Please change it.`, 'error');
+        } else {
+             showNotification(`Save failed: ${error.message}`, 'error');
+        }
         return false;
       } else {
-        if (!silent) alert("Invoice uploaded to Supabase successfully!");
+        if (!silent) showNotification("Invoice saved to database successfully!", 'success');
         return true;
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("An unexpected error occurred.");
+      showNotification("An unexpected network error occurred.", 'error');
       return false;
     } finally {
       setIsSaving(false);
@@ -164,22 +197,20 @@ const App: React.FC = () => {
 
   // Helper to get the HTML element and config
   const getCanvasOptions = async () => {
-    // 1. Identify which preview is currently visible
     let element = document.getElementById('invoice-capture-desktop');
     if (!element || element.offsetParent === null) {
         element = document.getElementById('invoice-capture-mobile');
     }
 
     if (!element) {
-      alert("Could not find invoice preview to capture. Please ensure you are on the create tab.");
+      showNotification("Could not find invoice preview. Please create a bill first.", 'error');
       return null;
     }
 
-    // Capture original style
     const originalShadow = element.style.boxShadow;
     element.style.boxShadow = 'none';
 
-    // Force delay
+    // Force delay for rendering
     await new Promise(resolve => setTimeout(resolve, 100));
 
     return { element, originalShadow };
@@ -191,7 +222,6 @@ const App: React.FC = () => {
     const { element, originalShadow } = opts;
 
     try {
-      // Increased scale to 3 for higher quality
       const canvas = await html2canvas(element, {
         scale: 3, 
         useCORS: true, 
@@ -206,13 +236,12 @@ const App: React.FC = () => {
 
       canvas.toBlob(async (blob) => {
         if (!blob) {
-            alert("Failed to generate image for sharing.");
+            showNotification("Failed to generate image.", 'error');
             return;
         }
 
         const file = new File([blob], `${invoice.invoiceNo}.png`, { type: 'image/png' });
 
-        // Check if Web Share API is supported for Files
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           try {
             await navigator.share({
@@ -220,14 +249,15 @@ const App: React.FC = () => {
               title: `Invoice ${invoice.invoiceNo}`,
               text: `Here is the invoice for ${invoice.customer.name}`
             });
-          } catch (shareError) {
-             if ((shareError as Error).name !== 'AbortError') {
+            showNotification("Shared successfully!", 'success');
+          } catch (shareError: any) {
+             if (shareError.name !== 'AbortError') {
                  console.error('Share failed', shareError);
+                 showNotification("Sharing failed. Try downloading instead.", 'error');
              }
           }
         } else {
-          // Fallback for Desktop: Download it
-          alert("Direct sharing not supported on this device. Downloading image instead.");
+          showNotification("Sharing not supported on this device. Downloading...", 'info');
           const link = document.createElement('a');
           link.download = `${invoice.invoiceNo}.png`;
           link.href = canvas.toDataURL("image/png");
@@ -239,7 +269,7 @@ const App: React.FC = () => {
 
     } catch (err) {
       console.error("Share failed", err);
-      alert("Failed to share image.");
+      showNotification("Failed to process invoice image.", 'error');
     } finally {
       element.style.boxShadow = originalShadow;
     }
@@ -251,7 +281,6 @@ const App: React.FC = () => {
     const { element, originalShadow } = opts;
 
     try {
-      // Increased scale to 3 for higher quality
       const canvas = await html2canvas(element, {
         scale: 3,
         useCORS: true, 
@@ -271,10 +300,11 @@ const App: React.FC = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      showNotification("Invoice downloaded.", 'success');
 
     } catch (err) {
       console.error("Export failed", err);
-      alert("Failed to export image.");
+      showNotification("Failed to export image.", 'error');
     } finally {
       element.style.boxShadow = originalShadow;
     }
@@ -288,32 +318,48 @@ const App: React.FC = () => {
   };
 
   const handleSearch = async () => {
-    if (!searchTerm) return;
-    const results = await searchInvoices(searchTerm);
-    setSearchResults(results);
+    if (!searchTerm.trim()) {
+        showNotification("Please enter a search term.", 'info');
+        return;
+    }
+    try {
+        const results = await searchInvoices(searchTerm);
+        if (results.length === 0) {
+            showNotification("No invoices found with that details.", 'info');
+        }
+        setSearchResults(results);
+    } catch (e) {
+        showNotification("Error searching database.", 'error');
+    }
   };
 
   const loadInvoice = (saved: SavedInvoice) => {
     setInvoice(saved.data);
     setActiveTab('create');
+    showNotification(`Invoice ${saved.invoice_no} loaded.`, 'success');
   };
 
   const handleDownloadFromSearch = (saved: SavedInvoice) => {
     setInvoice(saved.data);
     setActiveTab('create');
-    // Wait for the render to happen then trigger download
+    showNotification("Preparing download...", 'info');
     setTimeout(() => {
         handleDownloadImage();
     }, 800);
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm("Are you sure you want to delete this invoice?")) {
-        const { error } = await deleteInvoice(id);
-        if (error) {
-            alert("Error deleting invoice");
-        } else {
-            setSearchResults(prev => prev.filter(item => item.id !== id));
+    if (window.confirm("Are you sure you want to permanently delete this invoice?")) {
+        try {
+            const { error } = await deleteInvoice(id);
+            if (error) {
+                showNotification("Could not delete invoice.", 'error');
+            } else {
+                setSearchResults(prev => prev.filter(item => item.id !== id));
+                showNotification("Invoice deleted successfully.", 'success');
+            }
+        } catch (e) {
+            showNotification("Error deleting invoice.", 'error');
         }
     }
   };
@@ -326,11 +372,34 @@ const App: React.FC = () => {
         invoiceNo: generateInvoiceNo(),
         logo: savedLogo || undefined 
       });
+      showNotification("New invoice started.", 'info');
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-slate-800 bg-gray-50">
+      
+      {/* Toast Notification Container */}
+      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+        {notifications.map((n) => (
+          <div 
+            key={n.id} 
+            className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-white transform transition-all duration-300 ${
+              n.type === 'error' ? 'bg-red-600' : 
+              n.type === 'success' ? 'bg-green-600' : 'bg-gray-800'
+            }`}
+          >
+            {n.type === 'success' && <CheckCircle size={20} />}
+            {n.type === 'error' && <AlertCircle size={20} />}
+            {n.type === 'info' && <Database size={20} />}
+            <span className="text-sm font-medium">{n.message}</span>
+            <button onClick={() => removeNotification(n.id)} className="ml-2 opacity-70 hover:opacity-100">
+               <XCircle size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Navbar */}
       <nav className="bg-brand-dark text-white p-4 shadow-md sticky top-0 z-50">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center px-4">
@@ -416,7 +485,9 @@ const App: React.FC = () => {
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={5} className="p-12 text-center text-gray-400 italic">No records found. Try searching.</td>
+                      <td colSpan={5} className="p-12 text-center text-gray-400 italic">
+                         {searchTerm ? 'No records found.' : 'Use the search box to find invoices.'}
+                      </td>
                     </tr>
                   )}
                 </tbody>

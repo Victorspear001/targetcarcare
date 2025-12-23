@@ -180,44 +180,44 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({
         </div>
 
         {/* --- STRICT ALIGNMENT FOOTER --- */}
-        <div className="absolute bottom-0 left-0 right-0 h-[45mm] px-[15mm] pb-[10mm] flex justify-between items-end">
+        <div className="absolute bottom-0 left-0 right-0 h-[45mm] px-[15mm] pb-[12mm] flex justify-between items-end bg-white">
             
             {/* Left Column: Payments & Terms */}
-            <div className="w-[58%] h-full flex flex-col justify-between border-t-2 border-gray-800 pt-2">
+            <div className="w-[58%] h-full flex flex-col justify-between pt-2 border-t-2 border-gray-800">
                 
-                {/* Payment Breakdown - Strict Table Layout */}
+                {/* Payment Breakdown - Very Compact */}
                 <div className="w-full">
-                    <p className="font-bold text-black uppercase text-[10px] mb-1 tracking-wider">Payment Details:</p>
-                    <table className="w-full text-[10px] border border-gray-200 rounded-sm">
-                        <thead className="bg-gray-50 text-gray-500 font-normal">
+                    <p className="font-bold text-black uppercase text-[9px] mb-1 tracking-wider text-left">Payment Details:</p>
+                    <table className="w-[90%] text-[9px] border-collapse border border-gray-200">
+                        <thead className="bg-gray-100 text-gray-600">
                            <tr>
-                              <th className="text-left px-2 py-0.5 font-semibold w-[30%]">Mode</th>
-                              <th className="text-left px-2 py-0.5 font-semibold w-[40%]">Ref / Info</th>
-                              <th className="text-right px-2 py-0.5 font-semibold w-[30%]">Amount</th>
+                              <th className="text-left px-1.5 py-0.5 border border-gray-200 font-semibold w-[25%]">Mode</th>
+                              <th className="text-left px-1.5 py-0.5 border border-gray-200 font-semibold w-[45%]">Ref</th>
+                              <th className="text-right px-1.5 py-0.5 border border-gray-200 font-semibold w-[30%]">Amount</th>
                            </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody>
                             {data.payments.length > 0 ? (
                                 data.payments.map((p, i) => (
                                     <tr key={i}>
-                                        <td className="px-2 py-0.5 font-bold text-gray-800 uppercase">{p.method}</td>
-                                        <td className="px-2 py-0.5 text-gray-500 truncate max-w-[100px]">{p.reference || '-'}</td>
-                                        <td className="px-2 py-0.5 text-right font-mono font-medium">₹ {p.amount}</td>
+                                        <td className="px-1.5 py-0.5 border border-gray-200 font-medium text-gray-800 uppercase">{p.method}</td>
+                                        <td className="px-1.5 py-0.5 border border-gray-200 text-gray-500 truncate max-w-[80px]">{p.reference || '-'}</td>
+                                        <td className="px-1.5 py-0.5 border border-gray-200 text-right font-mono text-black">₹ {p.amount}</td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={3} className="px-2 py-1 text-center text-gray-400 italic">No payment details recorded</td>
+                                    <td colSpan={3} className="px-1.5 py-0.5 text-center text-gray-400 italic">No payment details recorded</td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
 
-                {/* Terms */}
-                <div className="mt-2">
-                   <p className="font-bold text-[9px] uppercase text-gray-400 mb-0.5">Terms & Conditions:</p>
-                   <ul className="list-disc list-inside text-[9px] text-gray-500 leading-tight">
+                {/* Terms - Pushed to bottom of this column */}
+                <div className="mt-auto">
+                   <p className="font-bold text-[8px] uppercase text-gray-400 mb-0.5">Terms & Conditions:</p>
+                   <ul className="list-disc list-inside text-[8px] text-gray-500 leading-tight">
                       <li>Goods once sold cannot be taken back.</li>
                       <li>Service warranty valid for 7 days only.</li>
                       <li>Subject to Salem jurisdiction.</li>
@@ -226,11 +226,8 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({
             </div>
 
             {/* Right Column: Signature */}
-            <div className="w-[38%] h-full flex flex-col justify-between border-t-2 border-gray-800 pt-2">
-                <div className="flex-grow flex items-end justify-center pb-2">
-                    {/* Placeholder for optional digital signature image */}
-                </div>
-                <div className="text-center">
+            <div className="w-[38%] h-full flex flex-col justify-end pt-2 border-t-2 border-gray-800">
+                <div className="text-center pb-1">
                      <p className="font-bold text-sm text-gray-800">Authorized Signatory</p>
                      <p className="text-[9px] text-gray-500 uppercase tracking-widest mt-0.5">{COMPANY_DEFAULTS.name}</p>
                 </div>
