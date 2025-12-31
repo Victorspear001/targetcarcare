@@ -1,14 +1,13 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer, Share2, XCircle, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Save, Download, Search, RefreshCw, Upload, Image as ImageIcon, Database, Printer, Share2, XCircle, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { InvoiceData, LineItem, Payment, COMPANY_DEFAULTS, SavedInvoice } from './types';
 import { InvoicePreview } from './components/InvoicePreview';
 import { saveInvoice, searchInvoices, deleteInvoice } from './services/supabase';
 import html2canvas from 'html2canvas';
 
-// Helper to generate Invoice ID (TCC + 4 digits)
 const generateInvoiceNo = () => `TCC${Math.floor(1000 + Math.random() * 9000)}`;
 
-// Initial State
 const INITIAL_INVOICE: InvoiceData = {
   invoiceNo: generateInvoiceNo(),
   date: new Date().toISOString().split('T')[0],
@@ -30,7 +29,6 @@ const INITIAL_INVOICE: InvoiceData = {
   discountValue: 0
 };
 
-// Notification Type
 type NotificationType = {
   message: string;
   type: 'success' | 'error' | 'info';
@@ -41,6 +39,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'create' | 'search'>('create');
   const [invoice, setInvoice] = useState<InvoiceData>(INITIAL_INVOICE);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [searchResults, setSearchResults] = useState<SavedInvoice[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [notifications, setNotifications] = useState<NotificationType[]>([]);
@@ -48,7 +47,6 @@ const App: React.FC = () => {
   const printRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load persistent logo on mount if available
   useEffect(() => {
     const savedLogo = localStorage.getItem('companyLogo');
     if (savedLogo) {
@@ -56,14 +54,12 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // --- Notification Helper ---
   const showNotification = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now();
     setNotifications(prev => [...prev, { message, type, id }]);
-    // Auto dismiss
     setTimeout(() => {
       setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 4000);
+    }, 4500);
   };
 
   const removeNotification = (id: number) => {
@@ -72,22 +68,16 @@ const App: React.FC = () => {
 
   // --- Calculations ---
   const subtotal = invoice.items.reduce((sum, item) => sum + item.total, 0);
-  
   let discountAmount = 0;
   if (invoice.discountType === 'PERCENT') {
     discountAmount = subtotal * (invoice.discountValue / 100);
   } else {
     discountAmount = invoice.discountValue;
   }
-  
-  // Ensure discount doesn't exceed subtotal
   discountAmount = Math.min(discountAmount, subtotal);
-  
-  const totalAfterDiscount = subtotal - discountAmount;
-  const grandTotal = Math.round(totalAfterDiscount);
+  const grandTotal = Math.round(subtotal - discountAmount);
 
   // --- Handlers ---
-
   const handleCustomerChange = (field: keyof typeof invoice.customer, value: string) => {
     setInvoice(prev => ({
       ...prev,
@@ -137,7 +127,6 @@ const App: React.FC = () => {
   const addPayment = () => {
      const currentAllocated = invoice.payments.reduce((sum, p) => sum + p.amount, 0);
      const remaining = Math.max(0, grandTotal - currentAllocated);
-
      setInvoice(prev => ({
        ...prev,
        payments: [...prev.payments, { id: Date.now().toString(), method: 'Cash', amount: remaining }]
@@ -153,7 +142,7 @@ const App: React.FC = () => {
     const file = event.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-        showNotification("File too large. Please upload an image under 2MB.", 'error');
+        showNotification("Logo must be under 2MB.", 'error');
         return;
       }
       const reader = new FileReader();
@@ -161,14 +150,16 @@ const App: React.FC = () => {
         const base64String = reader.result as string;
         setInvoice(prev => ({ ...prev, logo: base64String }));
         localStorage.setItem('companyLogo', base64String);
+        showNotification("Logo updated and saved locally.", 'success');
       };
+      reader.onerror = () => showNotification("Failed to read logo file.", 'error');
       reader.readAsDataURL(file);
     }
   };
 
   const handleSaveToDB = async (silent = false) => {
-    if (!invoice.customer.name) {
-        showNotification("Please enter customer name.", 'error');
+    if (!invoice.customer.name.trim()) {
+        showNotification("Please enter customer name before saving.", 'error');
         return false;
     }
 
@@ -176,317 +167,256 @@ const App: React.FC = () => {
     try {
       const { error } = await saveInvoice(invoice, grandTotal);
       if (error) {
-        if (error.code === '23505') { // Postgres unique violation code
-             showNotification(`Invoice No '${invoice.invoiceNo}' already exists. Please change it.`, 'error');
+        if (error.code === '23505') {
+             showNotification(`Duplicate Invoice No '${invoice.invoiceNo}'. Updating to a new one...`, 'info');
+             setInvoice(p => ({ ...p, invoiceNo: generateInvoiceNo() }));
         } else {
-             showNotification(`Save failed: ${error.message}`, 'error');
+             showNotification(`Database Error: ${error.message}`, 'error');
         }
         return false;
       } else {
-        if (!silent) showNotification("Invoice saved to database successfully!", 'success');
+        if (!silent) showNotification("Invoice archived in database.", 'success');
         return true;
       }
     } catch (e: any) {
-      console.error(e);
-      showNotification("An unexpected network error occurred.", 'error');
+      showNotification("Network error while connecting to Supabase.", 'error');
       return false;
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Helper to get the HTML element and config
-  const getCanvasOptions = async () => {
+  const captureInvoice = async () => {
     let element = document.getElementById('invoice-capture-desktop');
     if (!element || element.offsetParent === null) {
         element = document.getElementById('invoice-capture-mobile');
     }
-
-    if (!element) {
-      showNotification("Could not find invoice preview. Please create a bill first.", 'error');
-      return null;
-    }
+    if (!element) throw new Error("Preview element not found");
 
     const originalShadow = element.style.boxShadow;
     element.style.boxShadow = 'none';
+    
+    // Tiny delay to ensure styles apply
+    await new Promise(r => setTimeout(r, 150));
 
-    // Force delay for rendering
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    return { element, originalShadow };
+    try {
+        const canvas = await html2canvas(element, {
+            scale: 3, 
+            useCORS: true, 
+            allowTaint: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+        });
+        return canvas;
+    } finally {
+        element.style.boxShadow = originalShadow;
+    }
   };
 
   const handleShare = async () => {
-    const opts = await getCanvasOptions();
-    if (!opts) return;
-    const { element, originalShadow } = opts;
-
+    setIsExporting(true);
     try {
-      const canvas = await html2canvas(element, {
-        scale: 3, 
-        useCORS: true, 
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: (clonedDoc) => {
-            const targetId = element?.id;
-            const clonedEl = clonedDoc.getElementById(targetId || 'invoice-capture-desktop');
-            if (clonedEl) clonedEl.style.boxShadow = 'none';
-        }
-      });
-
+      const canvas = await captureInvoice();
       canvas.toBlob(async (blob) => {
-        if (!blob) {
-            showNotification("Failed to generate image.", 'error');
-            return;
-        }
+        if (!blob) throw new Error("Canvas to Blob failed");
+        const file = new File([blob], `INV_${invoice.invoiceNo}.png`, { type: 'image/png' });
 
-        const file = new File([blob], `${invoice.invoiceNo}.png`, { type: 'image/png' });
-
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: `Invoice ${invoice.invoiceNo}`,
-              text: `Here is the invoice for ${invoice.customer.name}`
-            });
-            showNotification("Shared successfully!", 'success');
-          } catch (shareError: any) {
-             if (shareError.name !== 'AbortError') {
-                 console.error('Share failed', shareError);
-                 showNotification("Sharing failed. Try downloading instead.", 'error');
-             }
-          }
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: `Invoice ${invoice.invoiceNo}`,
+            text: `Invoice from Target Car Care for ${invoice.customer.name}`
+          });
+          showNotification("Shared successfully.", 'success');
         } else {
-          showNotification("Sharing not supported on this device. Downloading...", 'info');
+          // Fallback
           const link = document.createElement('a');
-          link.download = `${invoice.invoiceNo}.png`;
+          link.download = `INV_${invoice.invoiceNo}.png`;
           link.href = canvas.toDataURL("image/png");
-          document.body.appendChild(link);
           link.click();
-          document.body.removeChild(link);
+          showNotification("Direct share not available. File downloaded.", 'info');
         }
       }, 'image/png');
-
-    } catch (err) {
-      console.error("Share failed", err);
-      showNotification("Failed to process invoice image.", 'error');
+    } catch (err: any) {
+      showNotification(`Export failed: ${err.message}`, 'error');
     } finally {
-      element.style.boxShadow = originalShadow;
+      setIsExporting(false);
     }
   };
 
   const handleDownloadImage = async () => {
-    const opts = await getCanvasOptions();
-    if (!opts) return;
-    const { element, originalShadow } = opts;
-
+    setIsExporting(true);
     try {
-      const canvas = await html2canvas(element, {
-        scale: 3,
-        useCORS: true, 
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: (clonedDoc) => {
-            const targetId = element?.id;
-            const clonedEl = clonedDoc.getElementById(targetId || 'invoice-capture-desktop');
-            if (clonedEl) clonedEl.style.boxShadow = 'none';
-        }
-      });
-      
-      const image = canvas.toDataURL("image/png");
+      const canvas = await captureInvoice();
       const link = document.createElement('a');
-      link.download = `${invoice.invoiceNo}.png`;
-      link.href = image;
+      link.download = `INV_${invoice.invoiceNo}.png`;
+      link.href = canvas.toDataURL("image/png");
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showNotification("Invoice downloaded.", 'success');
-
-    } catch (err) {
-      console.error("Export failed", err);
-      showNotification("Failed to export image.", 'error');
+      showNotification("Invoice image downloaded.", 'success');
+    } catch (err: any) {
+      showNotification(`Download failed: ${err.message}`, 'error');
     } finally {
-      element.style.boxShadow = originalShadow;
+      setIsExporting(false);
     }
   };
 
   const handleSaveAndShare = async () => {
       const saved = await handleSaveToDB(true);
-      if (saved) {
-          await handleShare();
-      }
+      if (saved) await handleShare();
   };
 
   const handleSearch = async () => {
-    if (!searchTerm.trim()) {
-        showNotification("Please enter a search term.", 'info');
+    const term = searchTerm.trim();
+    if (!term) {
+        showNotification("Please enter invoice no or mobile.", 'info');
         return;
     }
     try {
-        const results = await searchInvoices(searchTerm);
-        if (results.length === 0) {
-            showNotification("No invoices found with that details.", 'info');
-        }
+        const results = await searchInvoices(term);
+        if (results.length === 0) showNotification("No matching records found.", 'info');
         setSearchResults(results);
     } catch (e) {
-        showNotification("Error searching database.", 'error');
+        showNotification("Database search failed.", 'error');
     }
   };
 
-  const loadInvoice = (saved: SavedInvoice) => {
-    setInvoice(saved.data);
-    setActiveTab('create');
-    showNotification(`Invoice ${saved.invoice_no} loaded.`, 'success');
-  };
-
-  const handleDownloadFromSearch = (saved: SavedInvoice) => {
-    setInvoice(saved.data);
-    setActiveTab('create');
-    showNotification("Preparing download...", 'info');
-    setTimeout(() => {
-        handleDownloadImage();
-    }, 800);
-  };
-
+  // Fix: Added missing handleDelete function to handle invoice deletion from archive
   const handleDelete = async (id: number) => {
-    if (window.confirm("Are you sure you want to permanently delete this invoice?")) {
-        try {
-            const { error } = await deleteInvoice(id);
-            if (error) {
-                showNotification("Could not delete invoice.", 'error');
-            } else {
-                setSearchResults(prev => prev.filter(item => item.id !== id));
-                showNotification("Invoice deleted successfully.", 'success');
-            }
-        } catch (e) {
-            showNotification("Error deleting invoice.", 'error');
-        }
+    if (!window.confirm("Are you sure you want to delete this invoice? This action cannot be undone.")) return;
+    
+    try {
+      const { error } = await deleteInvoice(id);
+      if (error) {
+        showNotification(`Delete Error: ${error.message}`, 'error');
+      } else {
+        showNotification("Invoice removed from archive.", 'success');
+        setSearchResults(prev => prev.filter(inv => inv.id !== id));
+      }
+    } catch (e) {
+      showNotification("Failed to communicate with database.", 'error');
     }
   };
 
   const handleNewInvoice = () => {
-    if (window.confirm("Start new invoice? Unsaved changes will be lost.")) {
+    if (window.confirm("Clear all fields and start a new bill?")) {
       const savedLogo = localStorage.getItem('companyLogo');
-      setInvoice({ 
-        ...INITIAL_INVOICE, 
-        invoiceNo: generateInvoiceNo(),
-        logo: savedLogo || undefined 
-      });
-      showNotification("New invoice started.", 'info');
+      setInvoice({ ...INITIAL_INVOICE, invoiceNo: generateInvoiceNo(), logo: savedLogo || undefined });
+      showNotification("Editor reset.", 'info');
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col font-sans text-slate-800 bg-gray-50">
+    <div className="min-h-screen flex flex-col font-sans text-slate-800 bg-slate-50 selection:bg-brand-blue selection:text-white">
       
-      {/* Toast Notification Container */}
-      <div className="fixed top-4 right-4 z-[100] flex flex-col gap-2 pointer-events-none">
+      {/* PROFESSIONAL TOAST NOTIFICATIONS */}
+      <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none w-full max-w-sm">
         {notifications.map((n) => (
           <div 
             key={n.id} 
-            className={`pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg text-white transform transition-all duration-300 ${
-              n.type === 'error' ? 'bg-red-600' : 
-              n.type === 'success' ? 'bg-green-600' : 'bg-gray-800'
+            className={`pointer-events-auto flex items-start gap-4 p-4 rounded-xl shadow-2xl border-l-4 transform transition-all duration-300 translate-x-0 bg-white ${
+              n.type === 'error' ? 'border-red-600' : 
+              n.type === 'success' ? 'border-green-600' : 'border-slate-800'
             }`}
           >
-            {n.type === 'success' && <CheckCircle size={20} />}
-            {n.type === 'error' && <AlertCircle size={20} />}
-            {n.type === 'info' && <Database size={20} />}
-            <span className="text-sm font-medium">{n.message}</span>
-            <button onClick={() => removeNotification(n.id)} className="ml-2 opacity-70 hover:opacity-100">
-               <XCircle size={16} />
+            <div className={`mt-0.5 ${n.type === 'error' ? 'text-red-600' : n.type === 'success' ? 'text-green-600' : 'text-slate-800'}`}>
+                {n.type === 'success' && <CheckCircle size={20} />}
+                {n.type === 'error' && <AlertCircle size={20} />}
+                {n.type === 'info' && <Database size={20} />}
+            </div>
+            <div className="flex-1">
+                <p className="text-sm font-bold text-slate-900">{n.message}</p>
+            </div>
+            <button onClick={() => removeNotification(n.id)} className="text-slate-300 hover:text-slate-900 transition">
+               <XCircle size={18} />
             </button>
           </div>
         ))}
       </div>
 
-      {/* Navbar */}
-      <nav className="bg-brand-dark text-white p-4 shadow-md sticky top-0 z-50">
+      {/* NAVBAR */}
+      <nav className="bg-slate-900 text-white p-5 shadow-xl sticky top-0 z-50">
         <div className="max-w-[1600px] mx-auto flex justify-between items-center px-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-brand-red rounded-lg flex items-center justify-center font-bold text-lg shadow-inner">T</div>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-red-600 rounded-xl flex items-center justify-center font-black text-2xl shadow-lg ring-4 ring-slate-800">T</div>
             <div className="flex flex-col">
-              <span className="font-bold text-xl tracking-wide leading-tight">TARGET</span>
-              <span className="text-gray-400 text-xs font-medium tracking-wider">CAR CARE ERP</span>
+              <span className="font-black text-2xl tracking-tighter leading-none">TARGET</span>
+              <span className="text-slate-400 text-[10px] font-black tracking-[0.2em] uppercase">Multi-Brand Car Care</span>
             </div>
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-2">
             <button 
               onClick={() => setActiveTab('create')}
-              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm flex items-center gap-2 ${activeTab === 'create' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
+              className={`px-6 py-2.5 rounded-lg transition-all font-bold text-sm flex items-center gap-2 ${activeTab === 'create' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}
             >
-              <Plus size={16} /> New Bill
+              <Plus size={18} /> CREATE BILL
             </button>
             <button 
               onClick={() => setActiveTab('search')}
-              className={`px-5 py-2.5 rounded-lg transition font-medium text-sm flex items-center gap-2 ${activeTab === 'search' ? 'bg-brand-blue text-white shadow-lg shadow-blue-900/50' : 'hover:bg-gray-700 text-gray-300'}`}
+              className={`px-6 py-2.5 rounded-lg transition-all font-bold text-sm flex items-center gap-2 ${activeTab === 'search' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}
             >
-              <Database size={16} /> Search Bills
+              <Database size={18} /> ARCHIVE
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main className="flex-grow p-6 md:p-10 max-w-[1600px] mx-auto w-full gap-10 layout-container">
+      {/* MAIN CONTENT */}
+      <main className="flex-grow p-6 lg:p-12 max-w-[1600px] mx-auto w-full">
         
         {activeTab === 'search' ? (
-          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100">
-            <h2 className="text-2xl font-bold mb-8 text-brand-dark border-b pb-4">Search Saved Bills</h2>
-            <div className="flex gap-4 mb-8 max-w-2xl">
-              <div className="relative flex-grow">
-                <Search className="absolute left-3 top-3.5 text-gray-400" size={20} />
-                <input 
-                  type="text" 
-                  placeholder="Search Invoice No or Mobile..." 
-                  className="w-full pl-10 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-blue focus:border-brand-blue outline-none transition"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                />
-              </div>
-              <button 
-                onClick={handleSearch}
-                className="bg-brand-dark text-white px-8 py-3 rounded-lg flex items-center gap-2 hover:bg-gray-800 transition shadow-lg"
-              >
-                Search
-              </button>
+          <div className="bg-white p-10 rounded-2xl shadow-2xl border border-slate-100">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
+                <div>
+                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">Invoice Archive</h2>
+                    <p className="text-slate-500 font-medium">Search and manage previous service bills</p>
+                </div>
+                <div className="flex w-full md:w-auto gap-2">
+                  <div className="relative flex-grow min-w-[300px]">
+                    <Search className="absolute left-4 top-3.5 text-slate-400" size={20} />
+                    <input 
+                      type="text" 
+                      placeholder="Invoice ID or Mobile..." 
+                      className="w-full pl-12 p-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600 focus:border-blue-600 outline-none transition font-medium"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    />
+                  </div>
+                  <button onClick={handleSearch} className="bg-slate-900 text-white px-8 rounded-xl font-bold hover:bg-black transition shadow-lg">SEARCH</button>
+                </div>
             </div>
             
-            <div className="overflow-hidden rounded-lg border border-gray-200">
+            <div className="overflow-hidden rounded-xl border border-slate-100">
               <table className="w-full text-left border-collapse">
-                <thead className="bg-gray-50">
-                  <tr className="text-gray-600 uppercase text-xs font-semibold tracking-wider">
-                    <th className="p-4">Date</th>
-                    <th className="p-4">Invoice #</th>
-                    <th className="p-4">Customer</th>
-                    <th className="p-4 text-right">Amount</th>
-                    <th className="p-4 text-center">Actions</th>
+                <thead className="bg-slate-50">
+                  <tr className="text-slate-400 uppercase text-[10px] font-black tracking-widest border-b border-slate-100">
+                    <th className="p-5">Date</th>
+                    <th className="p-5">ID</th>
+                    <th className="p-5">Customer</th>
+                    <th className="p-5 text-right">Grand Total</th>
+                    <th className="p-5 text-center">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-slate-50">
                   {searchResults.length > 0 ? searchResults.map(inv => (
-                    <tr key={inv.id} className="hover:bg-blue-50 transition-colors">
-                      <td className="p-4 text-sm text-gray-600">{new Date(inv.created_at).toLocaleDateString()}</td>
-                      <td className="p-4 font-mono font-medium text-brand-dark">{inv.invoice_no}</td>
-                      <td className="p-4 font-medium">{inv.customer_name}</td>
-                      <td className="p-4 text-right font-bold text-brand-dark">₹{inv.total_amount}</td>
-                      <td className="p-4 text-center flex items-center justify-center gap-3">
-                        <button onClick={() => loadInvoice(inv)} className="text-brand-blue hover:text-blue-700 font-medium text-sm flex items-center gap-1">
-                             Open
-                        </button>
-                        <button onClick={() => handleDownloadFromSearch(inv)} title="Download" className="text-gray-500 hover:text-gray-800">
-                             <Download size={18} />
-                        </button>
-                        <button onClick={() => handleDelete(inv.id)} title="Delete" className="text-red-400 hover:text-red-600">
-                             <Trash2 size={18} />
-                        </button>
+                    <tr key={inv.id} className="hover:bg-blue-50/50 transition-colors group">
+                      <td className="p-5 text-sm font-bold text-slate-500">{new Date(inv.created_at).toLocaleDateString()}</td>
+                      <td className="p-5 font-mono font-bold text-blue-600">{inv.invoice_no}</td>
+                      <td className="p-5 font-bold text-slate-800">{inv.customer_name}</td>
+                      <td className="p-5 text-right font-black text-slate-900">₹{inv.total_amount}</td>
+                      <td className="p-5 flex items-center justify-center gap-4">
+                        <button onClick={() => { setInvoice(inv.data); setActiveTab('create'); }} className="text-blue-600 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-xs font-black transition">EDIT/VIEW</button>
+                        <button onClick={() => { setInvoice(inv.data); setTimeout(handleDownloadImage, 500); }} className="text-slate-400 hover:text-slate-900 transition"><Download size={20}/></button>
+                        <button onClick={() => handleDelete(inv.id)} className="text-red-200 hover:text-red-600 transition"><Trash2 size={20}/></button>
                       </td>
                     </tr>
                   )) : (
                     <tr>
-                      <td colSpan={5} className="p-12 text-center text-gray-400 italic">
-                         {searchTerm ? 'No records found.' : 'Use the search box to find invoices.'}
+                      <td colSpan={5} className="p-20 text-center">
+                         <Database className="mx-auto text-slate-100 mb-4" size={60} />
+                         <p className="text-slate-300 font-bold uppercase tracking-widest">No Records Found</p>
                       </td>
                     </tr>
                   )}
@@ -497,291 +427,153 @@ const App: React.FC = () => {
         ) : (
           <div className="flex flex-col xl:flex-row gap-12 items-start">
             
-            {/* LEFT COLUMN: EDITOR */}
-            <div className="flex-1 space-y-8 w-full layout-editor">
+            {/* EDITOR SECTION */}
+            <div className="flex-1 space-y-8 w-full">
               
-              {/* Card: Invoice Meta & Customer */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-brand-red"></div>
-                
-                <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
+              {/* HEADER INFO */}
+              <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-2 h-full bg-red-600"></div>
+                <div className="flex flex-col md:flex-row justify-between items-start mb-8 gap-4">
                   <div>
-                    <h3 className="font-bold text-lg text-gray-800">Invoice Details</h3>
-                    <p className="text-sm text-gray-500">Enter customer and vehicle information</p>
+                    <h3 className="font-black text-2xl text-slate-900 tracking-tight">Invoice Details</h3>
+                    <p className="text-slate-500 font-medium">Setup customer and vehicle information</p>
                   </div>
-                  
                   <div className="flex flex-col items-end gap-2">
-                     <div className="flex items-center gap-2">
-                         <span className="text-sm font-semibold text-gray-500">Invoice No:</span>
-                         <span className="bg-gray-100 text-brand-dark px-3 py-1 rounded-md font-mono font-bold border border-gray-200">
-                            {invoice.invoiceNo}
-                        </span>
-                     </div>
-                     <input 
-                      type="date" 
-                      className="bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-md text-sm outline-none focus:border-brand-blue"
-                      value={invoice.date}
-                      onChange={(e) => setInvoice({...invoice, date: e.target.value})}
-                    />
+                     <span className="bg-slate-100 text-slate-900 px-4 py-2 rounded-xl font-mono font-black text-lg border border-slate-200">{invoice.invoiceNo}</span>
+                     <input type="date" className="bg-slate-50 border border-slate-200 px-4 py-2 rounded-xl text-sm font-bold outline-none focus:ring-2 focus:ring-blue-600" value={invoice.date} onChange={(e) => setInvoice({...invoice, date: e.target.value})} />
                   </div>
                 </div>
 
-                {/* Logo Upload Section */}
-                 <div className="mb-6 flex items-center gap-4 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
-                    <div className="w-16 h-16 bg-white rounded border flex items-center justify-center overflow-hidden">
-                       {invoice.logo ? (
-                         <img src={invoice.logo} alt="Logo" className="w-full h-full object-contain" />
-                       ) : (
-                         <ImageIcon className="text-gray-300" />
-                       )}
+                 <div className="mb-10 flex items-center gap-6 p-5 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 group hover:border-blue-300 transition-colors">
+                    <div className="w-20 h-20 bg-white rounded-xl border-2 border-slate-100 flex items-center justify-center overflow-hidden shadow-inner group-hover:scale-105 transition-transform">
+                       {invoice.logo ? <img src={invoice.logo} alt="Logo" className="w-full h-full object-contain" /> : <ImageIcon className="text-slate-200" size={32} />}
                     </div>
                     <div>
-                       <p className="text-sm font-semibold text-gray-700">Company Logo</p>
-                       <p className="text-xs text-gray-500 mb-2">Upload to display on invoice</p>
-                       <input 
-                          type="file" 
-                          ref={fileInputRef}
-                          className="hidden" 
-                          accept="image/*"
-                          onChange={handleLogoUpload}
-                        />
-                       <button 
-                        onClick={() => fileInputRef.current?.click()}
-                        className="text-xs bg-white border border-gray-300 px-3 py-1.5 rounded hover:bg-gray-50 flex items-center gap-2 transition"
-                       >
-                         <Upload size={14} /> Upload Logo
-                       </button>
+                       <p className="font-black text-slate-900 uppercase text-xs tracking-widest mb-1">Company Branding</p>
+                       <p className="text-xs text-slate-500 mb-3 font-medium">Recommended: Transparent PNG (500x500px)</p>
+                       <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                       <button onClick={() => fileInputRef.current?.click()} className="text-xs bg-white border border-slate-200 px-5 py-2.5 rounded-xl font-bold hover:shadow-lg transition">UPLOAD LOGO</button>
                     </div>
                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                  <div className="space-y-1">
-                     <label className="text-xs font-semibold text-gray-500 uppercase">Customer Name</label>
-                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.name} onChange={e => handleCustomerChange('name', e.target.value)} placeholder="Full Name" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Name</label>
+                     <input className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none transition font-bold" value={invoice.customer.name} onChange={e => handleCustomerChange('name', e.target.value)} placeholder="Enter full name" />
                   </div>
-                  <div className="space-y-1">
-                     <label className="text-xs font-semibold text-gray-500 uppercase">Mobile Number</label>
-                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.mobile} onChange={e => handleCustomerChange('mobile', e.target.value)} placeholder="10-digit Mobile" />
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mobile Number</label>
+                     <input className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none transition font-bold" value={invoice.customer.mobile} onChange={e => handleCustomerChange('mobile', e.target.value)} placeholder="10-digit number" />
                   </div>
-                  <div className="space-y-1">
-                     <label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Model</label>
-                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.vehicleName} onChange={e => handleCustomerChange('vehicleName', e.target.value)} placeholder="e.g. Swift Dzire" />
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vehicle Model</label>
+                     <input className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none transition font-bold" value={invoice.customer.vehicleName} onChange={e => handleCustomerChange('vehicleName', e.target.value)} placeholder="e.g. BMW X5" />
                   </div>
-                  <div className="space-y-1">
-                     <label className="text-xs font-semibold text-gray-500 uppercase">Vehicle Number</label>
-                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition uppercase font-mono" value={invoice.customer.vehicleNumber} onChange={e => handleCustomerChange('vehicleNumber', e.target.value)} placeholder="TN-XX-XX-XXXX" />
-                  </div>
-                  <div className="md:col-span-2 space-y-1">
-                     <label className="text-xs font-semibold text-gray-500 uppercase">Address</label>
-                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.address} onChange={e => handleCustomerChange('address', e.target.value)} placeholder="Full Address" />
-                  </div>
-                  <div className="space-y-1">
-                     <label className="text-xs font-semibold text-gray-500 uppercase">GSTIN (Optional)</label>
-                     <input className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" value={invoice.customer.gstin || ''} onChange={e => handleCustomerChange('gstin', e.target.value)} placeholder="GST Number" />
+                  <div className="space-y-1.5">
+                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vehicle Plate No</label>
+                     <input className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none transition font-black font-mono uppercase" value={invoice.customer.vehicleNumber} onChange={e => handleCustomerChange('vehicleNumber', e.target.value)} placeholder="TN-XX-XX-XXXX" />
                   </div>
                 </div>
               </div>
 
-              {/* Card: Items */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                <div className="flex justify-between items-center mb-6">
+              {/* SERVICES LIST */}
+              <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 relative">
+                <div className="flex justify-between items-center mb-8">
                   <div>
-                    <h3 className="font-bold text-lg text-gray-800">Services & Parts</h3>
-                    <p className="text-sm text-gray-500">List all services provided</p>
+                    <h3 className="font-black text-2xl text-slate-900 tracking-tight">Services & Spares</h3>
+                    <p className="text-slate-500 font-medium">Manage billable line items</p>
                   </div>
-                  <button onClick={addItem} className="flex items-center gap-2 text-sm bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 shadow-md transition font-medium">
-                    <Plus size={16} /> Add Item
+                  <button onClick={addItem} className="bg-green-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-green-700 transition shadow-lg shadow-green-200 flex items-center gap-2">
+                    <Plus size={20} /> ADD ITEM
                   </button>
                 </div>
                 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {invoice.items.map((item, idx) => (
-                    <div key={item.id} className="flex gap-3 items-start group">
-                      <span className="pt-3 text-xs text-gray-400 w-6 font-mono">{idx + 1}.</span>
-                      <div className="flex-grow">
-                        <input 
-                          placeholder="Description of Service / Part" 
-                          className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" 
-                          value={item.description} 
-                          onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                        />
-                      </div>
-                      <div className="w-28">
-                        <input 
-                          type="number" placeholder="Rate" 
-                          className="w-full p-2.5 border border-gray-300 rounded-lg text-right focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" 
-                          value={item.rate} 
-                          onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="w-20">
-                        <input 
-                          type="number" placeholder="Qty" 
-                          className="w-full p-2.5 border border-gray-300 rounded-lg text-center focus:ring-1 focus:ring-brand-blue focus:border-brand-blue outline-none transition" 
-                          value={item.quantity} 
-                          onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
-                        />
-                      </div>
-                      <div className="w-28 pt-3 text-right font-mono font-bold text-gray-700">
-                        {item.total.toFixed(2)}
-                      </div>
-                      <button onClick={() => removeItem(item.id)} className="p-3 text-gray-300 hover:text-red-500 transition group-hover:text-red-400">
-                        <Trash2 size={18} />
-                      </button>
+                    <div key={item.id} className="flex gap-4 items-center group bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                      <span className="font-black text-slate-300 w-6 text-center">{idx + 1}</span>
+                      <input placeholder="Description" className="flex-grow p-3.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-600 outline-none font-bold text-sm" value={item.description} onChange={(e) => updateItem(item.id, 'description', e.target.value)} />
+                      <div className="w-32"><input type="number" placeholder="Rate" className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-right font-black focus:ring-2 focus:ring-blue-600 outline-none" value={item.rate} onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)} /></div>
+                      <div className="w-20"><input type="number" placeholder="Qty" className="w-full p-3.5 bg-white border border-slate-200 rounded-xl text-center font-bold focus:ring-2 focus:ring-blue-600 outline-none" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)} /></div>
+                      <div className="w-28 text-right font-black text-slate-900">₹{item.total.toFixed(2)}</div>
+                      <button onClick={() => removeItem(item.id)} className="p-2 text-slate-200 hover:text-red-600 transition"><Trash2 size={20} /></button>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Card: Calculation & Payment - Reordered */}
-              <div className="space-y-6">
-                
-                {/* 1. Grand Total & Summary (MOVED UPPER) */}
-                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-brand-dark"></div>
-                    <h3 className="font-bold text-lg text-gray-800 mb-4">Payment Summary</h3>
-                    
-                    <div className="bg-gray-50 p-6 rounded-lg border border-gray-100">
-                      <div className="flex justify-between mb-3 text-gray-600">
-                        <span className="font-medium">Subtotal</span>
-                        <span className="font-bold text-gray-800 font-mono text-lg">₹ {subtotal.toFixed(2)}</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between mb-4 gap-4 py-3 border-y border-dashed border-gray-200">
-                        <div className="flex items-center gap-2">
-                           <span className="text-sm font-medium text-gray-500">Discount:</span>
-                            <select 
-                              className="bg-white border border-gray-300 rounded text-sm p-1.5 focus:border-brand-blue outline-none"
-                              value={invoice.discountType}
-                              onChange={(e) => setInvoice({...invoice, discountType: e.target.value as any})}
-                            >
-                              <option value="FIXED">Flat (₹)</option>
-                              <option value="PERCENT">Percent (%)</option>
-                            </select>
+              {/* TOTALS & PAYMENT */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
+                    <h3 className="font-black text-xl text-slate-900 mb-6">Grand Summary</h3>
+                    <div className="space-y-4">
+                        <div className="flex justify-between font-bold text-slate-500"><span>Subtotal</span><span className="font-black text-slate-900">₹{subtotal.toFixed(2)}</span></div>
+                        <div className="flex items-center justify-between gap-4 py-4 border-y border-slate-100">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-slate-400 uppercase">Discount</span>
+                                <select className="bg-slate-50 border border-slate-200 rounded-lg p-1.5 text-xs font-bold outline-none" value={invoice.discountType} onChange={(e) => setInvoice({...invoice, discountType: e.target.value as any})}>
+                                    <option value="FIXED">Flat ₹</option>
+                                    <option value="PERCENT">% Off</option>
+                                </select>
+                            </div>
+                            <input type="number" className="w-28 border border-slate-200 rounded-xl p-2 text-right font-black outline-none focus:ring-2 focus:ring-blue-600" value={invoice.discountValue} onChange={(e) => setInvoice({...invoice, discountValue: parseFloat(e.target.value) || 0})} />
                         </div>
-                        <input 
-                          type="number" 
-                          className="w-24 border border-gray-300 rounded p-1.5 text-right text-sm font-medium outline-none focus:border-brand-blue"
-                          value={invoice.discountValue}
-                          onChange={(e) => setInvoice({...invoice, discountValue: parseFloat(e.target.value) || 0})}
-                        />
-                      </div>
-
-                      <div className="flex justify-between items-end">
-                        <span className="text-xl font-bold text-brand-dark">Grand Total</span>
-                        <div className="text-right">
-                          <span className="text-4xl font-extrabold text-brand-blue tracking-tight">₹ {grandTotal}</span>
-                          <p className="text-xs text-gray-500 font-medium mt-1 uppercase tracking-wide">Rounded Amount</p>
+                        <div className="flex justify-between items-end pt-2">
+                            <span className="font-black text-slate-900 uppercase tracking-widest text-sm">Amount Due</span>
+                            <span className="text-5xl font-black text-blue-600 tracking-tighter">₹{grandTotal}</span>
                         </div>
-                      </div>
                     </div>
                   </div>
 
-                  {/* 2. Payment Methods (MOVED LOWER) */}
-                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                    <div className="flex justify-between items-center mb-4">
-                       <div>
-                          <h3 className="font-bold text-lg text-gray-800">Payment Modes</h3>
-                          <p className="text-sm text-gray-500">Split payment across multiple methods</p>
-                       </div>
-                       <button onClick={addPayment} className="text-sm font-bold text-brand-blue hover:bg-blue-50 px-3 py-1.5 rounded transition">
-                         + Split Payment
-                       </button>
+                  <div className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
+                    <div className="flex justify-between items-center mb-6">
+                       <h3 className="font-black text-xl text-slate-900">Payment Modes</h3>
+                       <button onClick={addPayment} className="text-xs font-black text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-xl transition underline">SPLIT PAYMENT</button>
                     </div>
-                    
                     <div className="space-y-3">
                       {invoice.payments.map((p) => (
-                        <div key={p.id} className="flex gap-3 items-center bg-gray-50 p-2 rounded-lg border border-gray-100">
-                          <select 
-                            className="border border-gray-300 rounded-md p-2 text-sm bg-white focus:border-brand-blue outline-none w-32"
-                            value={p.method}
-                            onChange={(e) => updatePayment(p.id, 'method', e.target.value)}
-                          >
-                            <option>Cash</option>
-                            <option>UPI</option>
-                            <option>Card</option>
-                            <option>Bank Transfer</option>
+                        <div key={p.id} className="flex gap-3 items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <select className="border border-slate-200 rounded-lg p-2 text-xs font-bold bg-white outline-none w-28" value={p.method} onChange={(e) => updatePayment(p.id, 'method', e.target.value)}>
+                            <option>Cash</option><option>UPI</option><option>Card</option><option>Bank Transfer</option>
                           </select>
-                          <input 
-                            className="border border-gray-300 rounded-md p-2 w-32 text-sm font-mono text-right focus:border-brand-blue outline-none"
-                            type="number"
-                            placeholder="Amount"
-                            value={p.amount}
-                            onChange={(e) => updatePayment(p.id, 'amount', parseFloat(e.target.value) || 0)}
-                          />
-                           <input 
-                            className="border border-gray-300 rounded-md p-2 flex-grow text-sm focus:border-brand-blue outline-none"
-                            type="text"
-                            placeholder="Reference ID (Optional)"
-                            value={p.reference || ''}
-                            onChange={(e) => updatePayment(p.id, 'reference', e.target.value)}
-                          />
-                          <button onClick={() => removePayment(p.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={16}/></button>
+                          <input className="border border-slate-200 rounded-lg p-2 w-28 text-xs font-black text-right outline-none" type="number" placeholder="Amt" value={p.amount} onChange={(e) => updatePayment(p.id, 'amount', parseFloat(e.target.value) || 0)} />
+                          <input className="border border-slate-200 rounded-lg p-2 flex-grow text-xs font-bold outline-none" type="text" placeholder="Ref No." value={p.reference || ''} onChange={(e) => updatePayment(p.id, 'reference', e.target.value)} />
+                          <button onClick={() => removePayment(p.id)} className="text-slate-300 hover:text-red-600"><Trash2 size={16}/></button>
                         </div>
                       ))}
                     </div>
                   </div>
-
               </div>
 
-              {/* Action Bar */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sticky bottom-6 z-40 bg-white/90 p-4 backdrop-blur-md shadow-2xl rounded-xl border border-gray-200 action-bar">
-                <button 
-                  onClick={handleNewInvoice}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
-                >
-                  <RefreshCw size={18} /> Reset
+              {/* ACTION TOOLBAR */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sticky bottom-8 z-40 bg-slate-900/95 p-5 backdrop-blur-xl shadow-2xl rounded-2xl border border-slate-800">
+                <button onClick={handleNewInvoice} className="flex items-center justify-center gap-2 p-4 rounded-xl font-black text-slate-300 bg-slate-800 hover:bg-slate-700 transition">
+                  <RefreshCw size={20} /> RESET
                 </button>
-                <button 
-                  onClick={() => handleSaveToDB(false)}
-                  disabled={isSaving}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-gray-700 hover:bg-gray-800 disabled:opacity-50 transition shadow-lg shadow-gray-600/20"
-                >
-                   <Save size={18} /> {isSaving ? 'Saving...' : 'Save DB'}
+                <button onClick={() => handleSaveToDB(false)} disabled={isSaving} className="flex items-center justify-center gap-2 p-4 rounded-xl font-black text-white bg-blue-700 hover:bg-blue-600 disabled:opacity-50 transition shadow-lg shadow-blue-900/50">
+                   {isSaving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20} />} SAVE DB
                 </button>
-                
-                 <button 
-                  onClick={handleShare}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-green-600 hover:bg-green-700 transition shadow-lg shadow-green-600/20"
-                >
-                   <Share2 size={18} /> Share Image
+                <button onClick={handleShare} disabled={isExporting} className="flex items-center justify-center gap-2 p-4 rounded-xl font-black text-white bg-green-600 hover:bg-green-500 transition shadow-lg shadow-green-900/50">
+                   {isExporting ? <Loader2 className="animate-spin" size={20}/> : <Share2 size={20} />} SHARE
                 </button>
-
-                <button 
-                  onClick={handleSaveAndShare}
-                  disabled={isSaving}
-                  className="flex items-center justify-center gap-2 p-3.5 rounded-lg font-bold text-white bg-brand-red hover:bg-red-700 transition shadow-lg shadow-red-600/20"
-                >
-                   <Upload size={18} /> Save & Share
+                <button onClick={handleSaveAndShare} disabled={isSaving || isExporting} className="flex items-center justify-center gap-2 p-4 rounded-xl font-black text-white bg-red-600 hover:bg-red-500 transition shadow-lg shadow-red-900/50">
+                   <Upload size={20} /> SAVE & SHARE
                 </button>
               </div>
-
             </div>
 
-            {/* RIGHT COLUMN: PREVIEW */}
-            <div className="hidden xl:flex flex-col items-center w-[250mm] flex-shrink-0 bg-gray-200/50 p-8 rounded-xl border-dashed border-2 border-gray-300 sticky top-24">
-              <div className="mb-4 flex items-center gap-2 text-gray-500 font-semibold uppercase text-xs tracking-wider">
-                  <Printer size={14} /> Live A4 Preview
+            {/* A4 PREVIEW COLUMN */}
+            <div className="hidden xl:flex flex-col items-center w-[240mm] flex-shrink-0 bg-slate-200/50 p-8 rounded-3xl border-4 border-dashed border-slate-200 sticky top-32">
+              <div className="mb-6 flex items-center gap-3 text-slate-400 font-black uppercase text-xs tracking-[0.3em]">
+                  <Printer size={16} /> Digital Copy Preview
               </div>
-              <InvoicePreview 
-                ref={printRef} 
-                targetId="invoice-capture-desktop"
-                data={invoice} 
-                calculations={{ subtotal, discountAmount, grandTotal }} 
-              />
+              <InvoicePreview ref={printRef} targetId="invoice-capture-desktop" data={invoice} calculations={{ subtotal, discountAmount, grandTotal }} />
             </div>
 
-            {/* Mobile Preview Toggle */}
-            <div className="block xl:hidden mt-8 w-full mobile-preview-header">
-               <h3 className="font-bold text-gray-800 mb-4 text-center">Invoice Preview</h3>
-               <InvoicePreview 
-                  ref={printRef} 
-                  targetId="invoice-capture-mobile"
-                  data={invoice} 
-                  calculations={{ subtotal, discountAmount, grandTotal }} 
-                />
+            {/* MOBILE PREVIEW */}
+            <div className="block xl:hidden mt-12 w-full">
+               <h3 className="font-black text-slate-900 mb-6 text-center tracking-tighter text-2xl uppercase">Live Preview</h3>
+               <InvoicePreview ref={printRef} targetId="invoice-capture-mobile" data={invoice} calculations={{ subtotal, discountAmount, grandTotal }} />
             </div>
 
           </div>

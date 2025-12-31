@@ -11,7 +11,6 @@ interface InvoicePreviewProps {
   targetId?: string;
 }
 
-// Fixed dimensions for A4 compliance (210mm x 297mm)
 const A4_WIDTH_MM = 210;
 const A4_HEIGHT_MM = 297;
 
@@ -20,7 +19,7 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({
   const { subtotal, discountAmount, grandTotal } = calculations;
 
   return (
-    <div className="w-full overflow-x-auto flex justify-center">
+    <div className="w-full overflow-x-auto flex justify-center bg-gray-200 py-4">
       <div
         ref={ref}
         id={targetId}
@@ -31,210 +30,167 @@ export const InvoicePreview = forwardRef<HTMLDivElement, InvoicePreviewProps>(({
           padding: '12mm 15mm',
           boxSizing: 'border-box',
           fontSize: '10pt',
-          fontFamily: '"Times New Roman", serif',
+          fontFamily: '"Inter", "Helvetica", "Arial", sans-serif',
           display: 'flex',
           flexDirection: 'column',
-          lineHeight: '1.3'
+          lineHeight: '1.4'
         }}
       >
-        {/* --- HEADER SECTION --- */}
-        <div className="flex justify-between items-start border-b-2 border-gray-800 pb-4 mb-6 w-full">
-            {/* Left: Logo & Company Name */}
+        {/* --- HEADER --- */}
+        <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-6 w-full">
             <div className="flex items-center gap-5">
-                <div className="w-20 h-20 flex-shrink-0 flex items-center justify-center border border-gray-100 bg-gray-50 rounded-sm overflow-hidden">
+                <div className="w-20 h-20 flex-shrink-0 flex items-center justify-center border border-gray-100 bg-gray-50 rounded-md overflow-hidden shadow-sm">
                    {logo ? (
                      <img src={logo} alt="Logo" className="w-full h-full object-contain" />
                    ) : (
-                     <span className="text-xs text-gray-400 text-center leading-tight">NO LOGO</span>
+                     <span className="text-[10px] text-gray-400 font-bold">NO LOGO</span>
                    )}
                 </div>
                 <div>
-                   <h1 className="text-2xl font-bold uppercase tracking-wide text-red-700 leading-none mb-1.5">
+                   <h1 className="text-2xl font-black uppercase tracking-tight text-red-700 leading-none mb-1">
                      {COMPANY_DEFAULTS.name}
                    </h1>
-                   <div className="text-sm text-gray-800 leading-snug">
+                   <div className="text-[11px] text-slate-600 font-medium leading-relaxed">
                      <p>{COMPANY_DEFAULTS.address}</p>
-                     <p className="mt-0.5">Mobile: <span className="font-bold">{COMPANY_DEFAULTS.mobile}</span></p>
+                     <p>Ph: <span className="text-slate-900 font-bold">{COMPANY_DEFAULTS.mobile}</span></p>
                    </div>
                 </div>
             </div>
 
-            {/* Right: Invoice Label & Meta */}
-            <div className="text-right flex flex-col items-end">
-               <h2 className="text-3xl font-bold text-gray-800 uppercase tracking-widest leading-none opacity-80">INVOICE</h2>
-               <div className="mt-4 text-right space-y-1 text-sm">
-                  <div className="flex items-center justify-end gap-3">
-                     <span className="font-semibold text-gray-600 uppercase text-xs tracking-wider">Invoice No</span>
-                     <span className="font-bold font-mono text-base text-black">{invoiceNo}</span>
+            <div className="text-right">
+               <h2 className="text-3xl font-black text-slate-800 uppercase tracking-tighter opacity-10">INVOICE</h2>
+               <div className="mt-2 space-y-0.5">
+                  <div className="flex justify-end gap-2 text-[11px]">
+                     <span className="text-slate-400 font-bold uppercase">No:</span>
+                     <span className="font-bold font-mono text-slate-900">{invoiceNo}</span>
                   </div>
-                  <div className="flex items-center justify-end gap-3">
-                     <span className="font-semibold text-gray-600 uppercase text-xs tracking-wider">Date</span>
-                     <span className="font-medium">{new Date(date).toLocaleDateString('en-GB')}</span>
+                  <div className="flex justify-end gap-2 text-[11px]">
+                     <span className="text-slate-400 font-bold uppercase">Date:</span>
+                     <span className="font-bold text-slate-900">{new Date(date).toLocaleDateString('en-GB')}</span>
                   </div>
                </div>
             </div>
         </div>
 
-        {/* --- BILLING & VEHICLE INFO --- */}
-        <div className="flex gap-6 mb-8 w-full items-stretch">
-            
-            {/* Bill To Section */}
-            <div className="flex-1 border border-gray-300 rounded-sm p-3 relative pt-5">
-                <div className="absolute -top-2.5 left-3 bg-white px-2 text-xs font-bold text-blue-800 uppercase tracking-wider border border-gray-200 rounded-sm shadow-sm">
-                    Bill To
-                </div>
-                <div className="mt-1">
-                   <p className="font-bold text-base uppercase mb-1">{customer.name || 'Walk-in Customer'}</p>
-                   <p className="text-sm text-gray-700 whitespace-pre-line leading-tight min-h-[2.5em] mb-2">
-                      {customer.address || 'N/A'}
-                   </p>
-                   <div className="pt-2 border-t border-dashed border-gray-300 flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                      <span className="text-gray-600">Ph: <span className="font-semibold text-black font-mono">{customer.mobile || '-'}</span></span>
-                      {customer.gstin && <span className="text-gray-600">GSTIN: <span className="font-mono text-black">{customer.gstin}</span></span>}
-                   </div>
-                </div>
+        {/* --- CUSTOMER & VEHICLE --- */}
+        <div className="flex gap-4 mb-6">
+            <div className="flex-1 bg-slate-50 p-3 rounded-md border border-slate-200">
+                <p className="text-[9px] font-black text-slate-400 uppercase mb-1 tracking-widest">Customer Information</p>
+                <p className="font-bold text-sm uppercase text-slate-900">{customer.name || 'Cash Customer'}</p>
+                <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">{customer.address || 'Salem, Tamil Nadu'}</p>
+                <p className="text-[11px] font-bold mt-1 text-slate-800">Mob: {customer.mobile || 'N/A'}</p>
             </div>
-
-            {/* Vehicle Details Section */}
-            <div className="w-[40%] border border-gray-300 rounded-sm p-3 relative pt-5">
-                 <div className="absolute -top-2.5 left-3 bg-white px-2 text-xs font-bold text-blue-800 uppercase tracking-wider border border-gray-200 rounded-sm shadow-sm">
-                    Vehicle Details
-                </div>
-                <div className="mt-1 space-y-2 text-sm">
-                   <div className="flex justify-between items-center border-b border-gray-100 pb-1">
-                      <span className="text-gray-600">Model</span>
-                      <span className="font-semibold uppercase">{customer.vehicleName || '-'}</span>
-                   </div>
-                   <div className="flex justify-between items-center pt-1">
-                      <span className="text-gray-600">Vehicle No</span>
-                      <span className="font-mono font-bold text-base bg-yellow-50 px-2 py-0.5 border border-yellow-100 rounded text-black shadow-sm">
-                         {customer.vehicleNumber || '-'}
-                      </span>
-                   </div>
-                </div>
+            <div className="w-[35%] bg-slate-900 text-white p-3 rounded-md">
+                <p className="text-[9px] font-black text-slate-500 uppercase mb-1 tracking-widest">Vehicle Details</p>
+                <p className="text-[11px] font-medium text-slate-300">{customer.vehicleName || 'N/A'}</p>
+                <p className="text-lg font-black font-mono mt-1 tracking-tighter">{customer.vehicleNumber || '----------'}</p>
             </div>
         </div>
 
-        {/* --- ITEMS TABLE --- */}
-        <div className="flex-grow w-full">
-            <table className="w-full border-collapse border border-gray-800 text-sm table-fixed">
-               <thead className="bg-gray-100 text-black font-bold uppercase text-[11px] tracking-wider">
-                  <tr>
-                     <th className="border border-gray-800 py-2 w-[8%] text-center">S.No</th>
-                     <th className="border border-gray-800 py-2 w-[47%] px-3 text-left">Description</th>
-                     <th className="border border-gray-800 py-2 w-[15%] text-right px-2">Rate</th>
-                     <th className="border border-gray-800 py-2 w-[10%] text-center">Qty</th>
-                     <th className="border border-gray-800 py-2 w-[20%] text-right px-2">Total</th>
+        {/* --- SERVICES TABLE --- */}
+        <div className="flex-grow">
+            <table className="w-full border-collapse text-[11px] table-fixed">
+               <thead>
+                  <tr className="bg-slate-100 text-slate-600 font-black uppercase text-[9px] border-y border-slate-200">
+                     <th className="py-2 w-[8%] text-center">#</th>
+                     <th className="py-2 w-[52%] px-2 text-left">Service Description</th>
+                     <th className="py-2 w-[12%] text-right">Rate</th>
+                     <th className="py-2 w-[8%] text-center">Qty</th>
+                     <th className="py-2 w-[20%] text-right pr-2">Amount</th>
                   </tr>
                </thead>
-               <tbody>
+               <tbody className="divide-y divide-slate-100">
                   {items.map((item, index) => (
-                    <tr key={item.id} className="h-8 border-b border-gray-300 last:border-b-0">
-                       <td className="border-x border-gray-800 text-center align-middle">{index + 1}</td>
-                       <td className="border-x border-gray-800 px-3 align-middle font-medium text-gray-800 truncate">{item.description}</td>
-                       <td className="border-x border-gray-800 px-2 text-right align-middle font-mono">{item.rate.toFixed(2)}</td>
-                       <td className="border-x border-gray-800 text-center align-middle">{item.quantity}</td>
-                       <td className="border-x border-gray-800 px-2 text-right align-middle font-mono font-bold">{item.total.toFixed(2)}</td>
+                    <tr key={item.id} className="h-9">
+                       <td className="text-center text-slate-400 font-mono">{index + 1}</td>
+                       <td className="px-2 font-bold text-slate-800 truncate">{item.description}</td>
+                       <td className="text-right text-slate-600">₹{item.rate.toFixed(2)}</td>
+                       <td className="text-center text-slate-600">{item.quantity}</td>
+                       <td className="text-right pr-2 font-bold text-slate-900 font-mono">₹{item.total.toFixed(2)}</td>
                     </tr>
                   ))}
-                  {/* Filler rows */}
-                   {Array.from({ length: Math.max(0, 14 - items.length) }).map((_, i) => (
-                      <tr key={`empty-${i}`} className="h-8 border-b border-gray-100">
-                         <td className="border-x border-gray-800"></td>
-                         <td className="border-x border-gray-800"></td>
-                         <td className="border-x border-gray-800"></td>
-                         <td className="border-x border-gray-800"></td>
-                         <td className="border-x border-gray-800"></td>
+                  {/* Fill empty space */}
+                  {Array.from({ length: Math.max(0, 12 - items.length) }).map((_, i) => (
+                      <tr key={`f-${i}`} className="h-9 border-none opacity-0">
+                         <td colSpan={5}>&nbsp;</td>
                       </tr>
-                   ))}
-                   <tr className="h-0">
-                       <td colSpan={5} className="border-t border-gray-800"></td>
-                   </tr>
+                  ))}
                </tbody>
             </table>
         </div>
 
-        {/* --- TOTALS SECTION --- */}
-        <div className="flex justify-end mt-4 mb-8"> 
-             <div className="w-[45%] flex flex-col">
-                 <div className="flex justify-between items-center py-1 px-2 border-x border-b border-gray-200">
-                    <span className="font-semibold text-gray-600 text-sm">Sub Total</span>
-                    <span className="font-mono font-medium">₹ {subtotal.toFixed(2)}</span>
-                 </div>
-                 
-                 {discountAmount > 0 && (
-                    <div className="flex justify-between items-center py-1 px-2 border-x border-b border-gray-200 bg-red-50 text-red-700">
-                        <span className="font-semibold text-xs uppercase">Discount</span>
-                        <span className="font-mono font-medium">- ₹ {discountAmount.toFixed(2)}</span>
+        {/* --- SUMMARY SECTION --- */}
+        <div className="flex justify-between items-start mt-4 pt-4 border-t-2 border-slate-100">
+            <div className="w-[50%]">
+                 {/* Empty left side for spacing */}
+            </div>
+            <div className="w-[40%] space-y-1.5">
+                <div className="flex justify-between text-[11px] text-slate-500">
+                    <span>Sub Total</span>
+                    <span className="font-bold text-slate-800">₹{subtotal.toFixed(2)}</span>
+                </div>
+                {discountAmount > 0 && (
+                    <div className="flex justify-between text-[11px] text-red-600 font-bold">
+                        <span>Discount</span>
+                        <span>-₹{discountAmount.toFixed(2)}</span>
                     </div>
-                 )}
-
-                 <div className="flex justify-between items-center py-2 px-2 border border-gray-800 bg-gray-800 text-white mt-[-1px] shadow-sm">
-                    <span className="font-bold uppercase tracking-wide text-sm">Grand Total</span>
-                    <span className="font-mono font-bold text-xl">₹ {grandTotal.toFixed(0)}</span>
-                 </div>
-                 <div className="text-right text-[10px] text-gray-500 mt-1 italic">
-                    (Inclusive of all taxes)
-                 </div>
-             </div>
+                )}
+                <div className="flex justify-between items-center bg-slate-900 text-white p-2 rounded-md mt-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest">Grand Total</span>
+                    <span className="text-xl font-black font-mono">₹{grandTotal}</span>
+                </div>
+                <p className="text-[8px] text-right text-slate-400 italic">Rounded off to nearest rupee</p>
+            </div>
         </div>
 
-        {/* --- STRICT ALIGNMENT FOOTER --- */}
-        <div className="absolute bottom-0 left-0 right-0 h-[45mm] px-[15mm] pb-[12mm] flex justify-between items-end bg-white">
+        {/* --- FOOTER (STRICT ALIGNMENT) --- */}
+        <div className="absolute bottom-0 left-0 right-0 h-[50mm] px-[15mm] pb-[10mm] flex justify-between items-end">
             
-            {/* Left Column: Payments & Terms */}
-            <div className="w-[58%] h-full flex flex-col justify-between pt-2 border-t-2 border-gray-800">
-                
-                {/* Payment Breakdown - Very Compact */}
-                <div className="w-full">
-                    <p className="font-bold text-black uppercase text-[9px] mb-1 tracking-wider text-left">Payment Details:</p>
-                    <table className="w-[90%] text-[9px] border-collapse border border-gray-200">
-                        <thead className="bg-gray-100 text-gray-600">
-                           <tr>
-                              <th className="text-left px-1.5 py-0.5 border border-gray-200 font-semibold w-[25%]">Mode</th>
-                              <th className="text-left px-1.5 py-0.5 border border-gray-200 font-semibold w-[45%]">Ref</th>
-                              <th className="text-right px-1.5 py-0.5 border border-gray-200 font-semibold w-[30%]">Amount</th>
-                           </tr>
+            {/* Payment & Terms (Left) */}
+            <div className="w-[60%] h-full flex flex-col justify-between border-t border-slate-200 pt-3">
+                <div className="space-y-2">
+                    <p className="text-[9px] font-black text-slate-800 uppercase tracking-widest">Payment History</p>
+                    <table className="w-full text-[9px] border border-slate-100 rounded overflow-hidden">
+                        <thead className="bg-slate-50 text-slate-400 font-black uppercase text-[8px]">
+                            <tr>
+                                <th className="text-left py-1 px-2">Method</th>
+                                <th className="text-left py-1 px-2">Reference</th>
+                                <th className="text-right py-1 px-2">Paid</th>
+                            </tr>
                         </thead>
-                        <tbody>
-                            {data.payments.length > 0 ? (
-                                data.payments.map((p, i) => (
-                                    <tr key={i}>
-                                        <td className="px-1.5 py-0.5 border border-gray-200 font-medium text-gray-800 uppercase">{p.method}</td>
-                                        <td className="px-1.5 py-0.5 border border-gray-200 text-gray-500 truncate max-w-[80px]">{p.reference || '-'}</td>
-                                        <td className="px-1.5 py-0.5 border border-gray-200 text-right font-mono text-black">₹ {p.amount}</td>
-                                    </tr>
-                                ))
-                            ) : (
-                                <tr>
-                                    <td colSpan={3} className="px-1.5 py-0.5 text-center text-gray-400 italic">No payment details recorded</td>
+                        <tbody className="divide-y divide-slate-50">
+                            {data.payments.map((p, i) => (
+                                <tr key={i} className="text-slate-600">
+                                    <td className="py-1 px-2 font-bold uppercase">{p.method}</td>
+                                    <td className="py-1 px-2 truncate max-w-[120px]">{p.reference || '-'}</td>
+                                    <td className="py-1 px-2 text-right font-bold text-slate-900">₹{p.amount}</td>
                                 </tr>
-                            )}
+                            ))}
                         </tbody>
                     </table>
                 </div>
 
-                {/* Terms - Pushed to bottom of this column */}
-                <div className="mt-auto">
-                   <p className="font-bold text-[8px] uppercase text-gray-400 mb-0.5">Terms & Conditions:</p>
-                   <ul className="list-disc list-inside text-[8px] text-gray-500 leading-tight">
-                      <li>Goods once sold cannot be taken back.</li>
-                      <li>Service warranty valid for 7 days only.</li>
-                      <li>Subject to Salem jurisdiction.</li>
-                   </ul>
+                <div className="mt-4">
+                    <p className="text-[8px] font-black text-slate-300 uppercase mb-1">Standard Terms</p>
+                    <ul className="text-[8px] text-slate-400 leading-tight list-disc pl-3">
+                        <li>Warranty only applies to parts listed above.</li>
+                        <li>Not responsible for any valuables left in vehicle.</li>
+                        <li>Payments must be cleared before vehicle delivery.</li>
+                    </ul>
                 </div>
             </div>
 
-            {/* Right Column: Signature */}
-            <div className="w-[38%] h-full flex flex-col justify-end pt-2 border-t-2 border-gray-800">
-                <div className="text-center pb-1">
-                     <p className="font-bold text-sm text-gray-800">Authorized Signatory</p>
-                     <p className="text-[9px] text-gray-500 uppercase tracking-widest mt-0.5">{COMPANY_DEFAULTS.name}</p>
+            {/* Signature (Right) */}
+            <div className="w-[30%] h-full flex flex-col justify-end border-t border-slate-200 pt-3">
+                <div className="text-center pb-2">
+                    <p className="text-[10px] font-bold text-slate-900 uppercase">Target Car Care</p>
+                    <div className="h-8"></div> {/* Space for stamp/sign */}
+                    <div className="border-t border-slate-300 pt-1">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Auth. Signatory</p>
+                    </div>
                 </div>
             </div>
-
         </div>
-
       </div>
     </div>
   );
